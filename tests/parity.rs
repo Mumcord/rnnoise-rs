@@ -6,9 +6,7 @@ use rnnoise::{DenoiseState, FRAME_SIZE};
 
 fn load_i16(bytes: &[u8]) -> Vec<i16> {
     bytes
-        .as_chunks::<2>()
-        .0
-        .iter()
+        .chunks_exact(2)
         .map(|c| i16::from_le_bytes([c[0], c[1]]))
         .collect()
 }
@@ -22,7 +20,7 @@ fn matches_c_reference() {
     let mut out_buf = [0.0f32; FRAME_SIZE];
     let mut output: Vec<f32> = Vec::new();
     let mut first = true;
-    for chunk in input.as_chunks::<FRAME_SIZE>().0.iter() {
+    for chunk in input.chunks_exact(FRAME_SIZE) {
         let frame: Vec<f32> = chunk.iter().map(|&s| s as f32).collect();
         st.process_frame(&mut out_buf, &frame);
         if !first {
@@ -75,7 +73,7 @@ fn quantized_accuracy() {
     let mut out_buf = [0.0f32; FRAME_SIZE];
     let mut output: Vec<f32> = Vec::new();
     let mut first = true;
-    for chunk in input.as_chunks::<FRAME_SIZE>().0.iter() {
+    for chunk in input.chunks_exact(FRAME_SIZE) {
         let frame: Vec<f32> = chunk.iter().map(|&s| s as f32).collect();
         st.process_frame(&mut out_buf, &frame);
         if !first {

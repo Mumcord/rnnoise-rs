@@ -9,12 +9,7 @@
 pub(crate) fn inner_prod(x: &[f32], y: &[f32], n: usize) -> f32 {
     let (mut s0, mut s1, mut s2, mut s3) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
     let n4 = n - n % 4;
-    for (xc, yc) in x[..n4]
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .zip(y[..n4].as_chunks::<4>().0.iter())
-    {
+    for (xc, yc) in x[..n4].chunks_exact(4).zip(y[..n4].chunks_exact(4)) {
         s0 += xc[0] * yc[0];
         s1 += xc[1] * yc[1];
         s2 += xc[2] * yc[2];
@@ -65,12 +60,7 @@ pub(crate) fn pitch_xcorr(x: &[f32], y: &[f32], xcorr: &mut [f32], len: usize, m
     while i < mp4 {
         let (mut c0, mut c1, mut c2, mut c3) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
         let (mut y0, mut y1, mut y2, mut y3) = (y[i], y[i + 1], y[i + 2], y[i + 3]);
-        for (xc, yc) in x[..len4]
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .zip(y[i + 4..].as_chunks::<4>().0.iter())
-        {
+        for (xc, yc) in x[..len4].chunks_exact(4).zip(y[i + 4..].chunks_exact(4)) {
             c0 += xc[0] * y0;
             c1 += xc[0] * y1;
             c2 += xc[0] * y2;
