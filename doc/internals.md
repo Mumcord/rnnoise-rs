@@ -125,6 +125,10 @@ float routines:
     (v3, same shape 16 lanes wide), `vnni` (v4, `vpdpbusd` — unsigned × signed, so
     it biases weights by +128 in register and subtracts `128 · Σ q_x` per output;
     optional feature, needs Rust ≥ 1.89).
+  - `sparse8x4` (AVX2): the 8 rows of a block accumulate in one ymm register for
+    the whole row group instead of being reloaded/stored per block. Accumulated per
+    column, which is the order upstream `vec.h` uses, so it is bit-identical to the
+    portable reference (`tests::avx2_sparse8x4_matches_scalar`).
   - aarch64: `dotprod` (`sdot` via stable inline `asm!`, since `vdotq_s32` is
     nightly-only).
   - Because every product and pair sum fits in `i32` for the model's widths, all

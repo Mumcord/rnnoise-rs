@@ -83,6 +83,11 @@ NN per frame).
 | v3 | AVX2 (x86-64-v3) | same shape, 16 lanes | **15.3** |
 | v4 | AVX-512 VNNI (x86-64-v4) | `vpdpbusd`, unsigned × signed → biased + corrected | ~30 (no VNNI CPU here) |
 
+The same idea applies to the sparse 8×4 GEMV: `x86_64/sparse8x4.rs` keeps the
+eight-row accumulator in a ymm register for the whole row group instead of
+reloading and storing it per block, and accumulates per column in the order
+upstream `vec.h` uses, so it is bit-identical to `scalar::sparse_sgemv8x4`.
+
 End to end, plain `cargo bench`, tier v3 selected at runtime:
 
 | | before | after |
@@ -96,7 +101,7 @@ and the `avx512f` target feature only became stable in Rust 1.89; enabling the
 feature does not force AVX-512 codegen, it only makes the kernel available for the
 runtime choice.
 
-Every tier produces the **same exact integer** (products and pair sums fit in `i32`
+Every int8 tier produces the **same exact integer** (products and pair sums fit in `i32`
 for the model's widths), so the quantized output is unchanged — the accuracy test
 still reports `rel_energy 4.826e-6`, and `src/simd/tests.rs` asserts tier == scalar
 for every tier the CPU reports, skipping the others. The VNNI bias identity

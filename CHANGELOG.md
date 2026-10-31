@@ -26,6 +26,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the int8 path is finally *faster* than the float path on x86 instead of slower
   (full frame 519 → 119 µs, ≈84× real time); legacy 40.2 → 38.1 µs. Tier ladder
   measured on that core: 1.3 / 3.5 / 6.5 / 15.3 MACs per cycle (v1–v3).
+- `simd::sparse_sgemv8x4` (the GRU matrices, ~90 % of the float network) keeps the
+  eight-row accumulator in a register for the whole row group instead of
+  load/store per block, accumulating per column in upstream `vec.h` order —
+  bit-identical to the portable reference (float NN 289 → 248 µs/frame).
 - New optional feature `x86-vnni` for the AVX-512 tier (needs Rust ≥ 1.89 for the
   AVX-512 intrinsics; the default build stays on `rust-version = 1.85`).
 - All kernels compute the same exact `i32` value, so quantized output is

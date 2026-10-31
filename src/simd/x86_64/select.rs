@@ -29,6 +29,14 @@ pub(crate) fn dense_q8(out: &mut [f32], w: &[i8], scale: &[f32], m: usize, n: us
     scalar::dense_q8(out, w, scale, m, n, qx);
 }
 
+pub(crate) fn sparse_sgemv8x4(out: &mut [f32], w: &[f32], idx: &[i32], rows: usize, x: &[f32]) {
+    if std::arch::is_x86_feature_detected!("avx2") {
+        unsafe { x86_64::sparse8x4::sparse_sgemv8x4(out, w, idx, rows, x) };
+        return;
+    }
+    crate::simd::scalar::sparse_sgemv8x4(out, w, idx, rows, x);
+}
+
 #[cfg(feature = "legacy-model")]
 pub(crate) fn i8_dot(w: &[i8], x: &[i8]) -> i32 {
     // Tier v4 is not used here: `vpdpbusd` is unsigned × signed, so it needs the

@@ -103,3 +103,36 @@ fn vnni_bias_identity_is_exact() {
         "i32 accumulator would overflow"
     );
 }
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn avx2_sparse8x4_matches_scalar() {
+    if !std::arch::is_x86_feature_detected!("avx2") {
+        return;
+    }
+    let (rows, cols_per_group) = (64usize, 9usize);
+    let mut s = 11u32;
+    let mut rng = || {
+        s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        ((s >> 8) as f32) / 16_777_216.0 - 0.5
+    };
+    let w: Vec<f32> = (0..(rows / 8) * cols_per_group * 32)
+        .map(|_| rng())
+        .collect();
+    let x: Vec<f32> = (0..64).map(|_| rng()).collect();
+    let mut idx: Vec<i32> = Vec::new();
+    for g in 0..rows / 8 {
+        idx.push(cols_per_group as i32);
+        for c in 0..cols_per_group {
+            idx.push(((g * 4 + c) % 64) as i32);
+        }
+    }
+    let mut a = vec![0.0f32; rows];
+    let mut b = vec![0.0f32; rows];
+    scalar::sparse_sgemv8x4(&mut a, &w, &idx, rows, &x);
+    unsafe { crate::simd::x86_64::sparse8x4::sparse_sgemv8x4(&mut b, &w, &idx, rows, &x) };
+    assert_eq!(
+        b, a,
+        "AVX2 sparse kernel diverged from the scalar reference"
+    );
+}

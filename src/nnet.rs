@@ -89,7 +89,7 @@ impl LinearLayer {
         let m = self.nb_inputs;
         let out = &mut out[..n];
         match (&self.weights, &self.weights_idx) {
-            (Weights::Float(w), Some(idx)) => sparse_sgemv8x4(out, w, idx, n, input),
+            (Weights::Float(w), Some(idx)) => crate::simd::sparse_sgemv8x4(out, w, idx, n, input),
             (Weights::Float(w), None) => dense_sgemv(out, w, m, n, input),
             (Weights::Q8 { w, scale }, _) => {
                 let mut qx = [0i8; MAX_Q8_INPUTS];
@@ -213,35 +213,6 @@ fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, input: &[f32]) {
 
 /// Largest input width of a quantized layer (conv2 and the GRUs are all 384).
 const MAX_Q8_INPUTS: usize = 384;
-
-/// Port of `sparse_sgemv8x4` (float weights). `out` length is `rows`.
-fn sparse_sgemv8x4(out: &mut [f32], w: &[f32], idx: &[i32], rows: usize, x: &[f32]) {
-    for v in out.iter_mut() {
-        *v = 0.0;
-    }
-    let mut wi = 0usize;
-    let mut ii = 0usize;
-    let mut i = 0usize;
-    while i < rows {
-        let cols = idx[ii] as usize;
-        ii += 1;
-        // Fixed-length subslice lets the compiler drop bounds checks and
-        // vectorise the 8-wide row update cleanly.
-        let out8 = &mut out[i..i + SPARSE_ROWS];
-        for _ in 0..cols {
-            let pos = idx[ii] as usize;
-            ii += 1;
-            let xs = &x[pos..pos + 4];
-            let (xj0, xj1, xj2, xj3) = (xs[0], xs[1], xs[2], xs[3]);
-            let wb = &w[wi..wi + 32];
-            for r in 0..SPARSE_ROWS {
-                out8[r] += wb[r] * xj0 + wb[8 + r] * xj1 + wb[16 + r] * xj2 + wb[24 + r] * xj3;
-            }
-            wi += 32;
-        }
-        i += SPARSE_ROWS;
-    }
-}
 
 /// `compute_generic_dense`: linear + activation.
 pub(crate) fn compute_dense(layer: &LinearLayer, out: &mut [f32], input: &[f32], act: Activation) {
