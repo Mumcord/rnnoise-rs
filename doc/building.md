@@ -2,9 +2,10 @@
 
 ## Requirements
 
-- Rust ≥ 1.85 (the crate's `rust-version`). No nightly needed — the NEON `sdot`
-  kernel uses stable inline `asm!`, not the unstable intrinsic. The optional
-  `x86-vnni` feature is the only part that needs Rust ≥ 1.89.
+- Rust ≥ 1.89 (the crate's `rust-version`), because the AVX-512 VNNI tier uses the
+  AVX-512 intrinsics and the `avx512f` target feature, stable from 1.89. No nightly
+  needed — the NEON `sdot` kernel uses stable inline `asm!` instead of the unstable
+  intrinsic.
 - No system dependencies for the default build. The `legacy-model` feature pulls
   in `realfft` (which brings `rustfft`); nothing else.
 
@@ -26,7 +27,6 @@ The release profile is tuned in `Cargo.toml` (`opt-level=3`, `lto=true`,
 | *(none)* | ✓ | the current model; pure safe Rust, no deps |
 | `capi` | | a C ABI (`#[no_mangle]` exports) matching `rnnoise.h` |
 | `legacy-model` | | the original 2018 model (`DenoiseStateV1`); dep: `realfft` |
-| `x86-vnni` | | the AVX-512 VNNI int8 dot kernel; **needs Rust ≥ 1.89** (AVX-512 intrinsics/target feature stable there) |
 
 ```toml
 [dependencies]

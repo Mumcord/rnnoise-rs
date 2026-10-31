@@ -30,8 +30,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   eight-row accumulator in a register for the whole row group instead of
   load/store per block, accumulating per column in upstream `vec.h` order —
   bit-identical to the portable reference (float NN 289 → 248 µs/frame).
-- New optional feature `x86-vnni` for the AVX-512 tier (needs Rust ≥ 1.89 for the
-  AVX-512 intrinsics; the default build stays on `rust-version = 1.85`).
+### Changes
+
+- `rust-version` raised to **1.89** so the AVX-512 VNNI tier is unconditional
+  (it is still only *used* when CPUID reports `avx512f` + `avx512vnni`; nothing
+  forces AVX-512 codegen elsewhere in the crate).
+- `chunks_exact(2|4)` sites rewritten as `as_chunks::<N>()` so the crate is clean
+  under the lint set of the current toolchain.
 - All kernels compute the same exact `i32` value, so quantized output is
   unchanged (`rel_energy 4.8e-6`); `src/simd/tests.rs` asserts SIMD == scalar and
   skips when the feature is not present.

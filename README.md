@@ -108,9 +108,10 @@ let mut st = DenoiseState::with_model(model);
 The dot kernel is picked at **runtime**, per CPU, not by build flags: `sdot` on
 aarch64 with `dotprod`, and on x86-64 a tier ladder (SSE2 → SSE4.1 → AVX2 →
 AVX-512 VNNI) chosen from CPUID. Every tier computes the *same* exact `i32` value,
-so output never depends on which one ran. No `-C target-cpu` is needed; the tier
-`x86-vnni` (AVX-512) is an optional feature because those intrinsics need Rust ≥
-1.89. See [BENCHMARKS.md](BENCHMARKS.md) and [doc/performance.md](doc/performance.md).
+so output never depends on which one ran. No `-C target-cpu` is needed. The crate's
+`rust-version` is 1.89 (the AVX-512 tier needs the intrinsics and `avx512f` target
+feature that became stable there). See [BENCHMARKS.md](BENCHMARKS.md) and
+[doc/performance.md](doc/performance.md).
 
 ### Legacy (original 2018) model
 

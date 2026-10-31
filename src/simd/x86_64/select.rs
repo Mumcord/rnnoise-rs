@@ -7,7 +7,6 @@
 use crate::simd::{scalar, x86_64};
 
 pub(crate) fn dense_q8(out: &mut [f32], w: &[i8], scale: &[f32], m: usize, n: usize, qx: &[i8]) {
-    #[cfg(feature = "x86-vnni")]
     if std::arch::is_x86_feature_detected!("avx512f")
         && std::arch::is_x86_feature_detected!("avx512vnni")
     {
