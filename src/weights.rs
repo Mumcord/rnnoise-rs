@@ -107,7 +107,9 @@ fn f32_array(arrays: &HashMap<&str, Array<'_>>, name: &str) -> Result<Vec<f32>, 
         return Err(ModelError::BadSize(name.to_string()));
     }
     Ok(a.data
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect())
 }
@@ -120,7 +122,9 @@ fn i32_array(arrays: &HashMap<&str, Array<'_>>, name: &str) -> Result<Vec<i32>, 
         return Err(ModelError::BadSize(name.to_string()));
     }
     Ok(a.data
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect())
 }
