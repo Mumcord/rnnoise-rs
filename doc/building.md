@@ -2,8 +2,9 @@
 
 ## Requirements
 
-- Rust ≥ 1.74 (the crate's `rust-version`). No nightly needed — the NEON `sdot`
-  kernel uses stable inline `asm!`, not the unstable intrinsic.
+- Rust ≥ 1.85 (the crate's `rust-version`). No nightly needed — the NEON `sdot`
+  kernel uses stable inline `asm!`, not the unstable intrinsic. The optional
+  `x86-vnni` feature is the only part that needs Rust ≥ 1.89.
 - No system dependencies for the default build. The `legacy-model` feature pulls
   in `realfft` (which brings `rustfft`); nothing else.
 
@@ -25,11 +26,21 @@ The release profile is tuned in `Cargo.toml` (`opt-level=3`, `lto=true`,
 | *(none)* | ✓ | the current model; pure safe Rust, no deps |
 | `capi` | | a C ABI (`#[no_mangle]` exports) matching `rnnoise.h` |
 | `legacy-model` | | the original 2018 model (`DenoiseStateV1`); dep: `realfft` |
+| `x86-vnni` | | the AVX-512 VNNI int8 dot kernel; **needs Rust ≥ 1.89** (AVX-512 intrinsics/target feature stable there) |
 
 ```toml
 [dependencies]
 rnnoise-rs = { version = "0.1", features = ["legacy-model"] }
 ```
+
+## Runtime dispatch, not build-time flags
+
+The SIMD int8 dot kernels are chosen per CPU at runtime (CPUID + cached feature
+flags, once per matmul call), so a plain `cargo build` binary still uses AVX2 on an
+AVX2 CPU and the AVX-512 VNNI kernel on a Zen 4 / Ice Lake+ CPU. `#[target_feature]`
+is applied to the kernel functions only, never to the crate, so nothing requires
+`-C target-cpu=x86-64-v3` or `-C target-cpu=native` — those flags still help the
+float path (FMA), but they are not needed for the int8 kernels.
 
 ## Crate outputs
 

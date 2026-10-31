@@ -5,7 +5,9 @@ it, and how to reproduce the numbers. For the full benchmark tables and
 methodology see [`BENCHMARKS.md`](../BENCHMARKS.md).
 
 All figures are Apple M4 Pro, single core, `opt-level=3, lto=true,
-codegen-units=1`. Per-frame is the steady-state cost of one `process_frame`;
+codegen-units=1`, except the x86-64 row, which is an AMD Ryzen 9 5900X (Zen 3)
+with plain `cargo bench` — i.e. the default `x86-64` (SSE2) codegen baseline plus
+runtime feature detection, no `-C target-cpu`. Per-frame is the steady-state cost of one `process_frame`;
 "real time" is how many times faster than the 10 ms a frame represents.
 
 ## Summary
@@ -13,7 +15,8 @@ codegen-units=1`. Per-frame is the steady-state cost of one `process_frame`;
 | Configuration | per frame | real-time | notes |
 |---|--:|--:|---|
 | current model, float (default) | ~312 µs | ~32× | bit-exact with C, zero deps |
-| current model, int8 + `sdot` | ~105 µs | ~95× | opt-in, audibly identical |
+| current model, int8 + `sdot` (aarch64) | ~105 µs | ~95× | opt-in, audibly identical |
+| current model, int8 + `pmaddwd` (x86-64, Zen 3) | ~120 µs | ~84× | runtime-detected AVX2; 4.3× vs the old scalar path |
 | legacy model (`legacy-model`) | ~26 µs | ~309× | **faster than `nnnoiseless`** |
 | — `nnnoiseless` (same old model) | ~28 µs | ~290× | for reference |
 
@@ -61,26 +64,44 @@ Key lesson — because the workload is instruction-bound, *how* you do int8 matt
 
 `sdot` is emitted via stable inline `asm!` (the `vdotq_s32` intrinsic is still
 nightly-only), guarded by runtime `is_aarch64_feature_detected!("dotprod")`, with
-a scalar fallback that yields the identical integer result. Non-aarch64 targets
-use the scalar path automatically.
+a scalar fallback that yields the identical integer result.
 
-### Beating `nnnoiseless` on the legacy model
+### x86-64 tiers (int8, parity-safe, runtime-detected)
 
-The legacy model started ~45 µs (with the KISS-FFT) and is now ~26 µs — faster
-than `nnnoiseless`'s ~28 µs — via three changes:
+Before this, x86-64 had no int8 dot kernel at all: on the `x86-64` baseline codegen
+(`SSE2`) a byte dot product cannot be vectorized — `pmaddubsw` is SSSE3 and
+`vpdpbusd` is VNNI — so the int8 path was **slower** than float (487 vs 289 µs of
+NN per frame).
 
-1. **`realfft` (rustfft) for the FFT.** The from-scratch KISS-FFT is ~2× slower
-   per transform than rustfft; matching nnnoiseless's FFT closed most of the gap.
-   `realfft` is an optional dependency, gated to the `legacy-model` feature, so the
-   default crate stays dependency-free and the current model keeps its bit-exact
-   KISS-FFT.
-2. **Tighter pitch:** a 4-lags-at-once `pitch_xcorr` and 4-wide inner products.
-3. **`sdot` int8 GRU input matmuls** with dynamically-quantized activations — the
-   decisive edge nnnoiseless doesn't have (it makes the NN faster while keeping the
-   low-memory int8 weights).
+`src/simd/x86_64/` now has one kernel per ISA tier, chosen at **runtime** by CPUID
+(`src/simd/x86_64/select.rs`), once per matmul call, never through `-C target-cpu`:
 
-Fair head-to-head (standalone, isolated processes, median of many runs):
-**rnnoise-rs ~26 µs vs nnnoiseless ~28 µs (~7 % faster).**
+| tier | ISA | kernel | MACs/cycle on this Zen 3 core |
+|---|---|---|--:|
+| v1 | SSE2 (x86-64 baseline) | `punpcklbw` + `cmpgt` sign mask + `pmaddwd` | 3.5 |
+| v2 | SSE4.1 (x86-64-v2) | `pmovsxbw` + `pmaddwd` | 6.5 |
+| v3 | AVX2 (x86-64-v3) | same shape, 16 lanes | **15.3** |
+| v4 | AVX-512 VNNI (x86-64-v4) | `vpdpbusd`, unsigned × signed → biased + corrected | ~30 (no VNNI CPU here) |
+
+End to end, plain `cargo bench`, tier v3 selected at runtime:
+
+| | before | after |
+|---|--:|--:|
+| int8 neural net | 487 µs | **84 µs** (5.8×) |
+| int8 full frame | 519 µs | **119 µs** (84× real time) |
+| legacy full frame | 40.2 µs | 38.1 µs |
+
+Tier v4 is behind the optional `x86-vnni` feature because the AVX-512 intrinsics
+and the `avx512f` target feature only became stable in Rust 1.89; enabling the
+feature does not force AVX-512 codegen, it only makes the kernel available for the
+runtime choice.
+
+Every tier produces the **same exact integer** (products and pair sums fit in `i32`
+for the model's widths), so the quantized output is unchanged — the accuracy test
+still reports `rel_energy 4.826e-6`, and `src/simd/tests.rs` asserts tier == scalar
+for every tier the CPU reports, skipping the others. The VNNI bias identity
+(`Σ(w+128)·x − 128·Σx == Σ w·x`) is also unit-tested in pure Rust, so it is checked
+even on runners without AVX-512.
 
 ## Choosing a configuration
 
