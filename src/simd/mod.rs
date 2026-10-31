@@ -20,6 +20,6 @@ mod x86_64;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use dispatch::dense_q8;
 #[cfg(feature = "legacy-model")]
 pub(crate) use dispatch::i8_dot;
+pub(crate) use dispatch::{dense_q8, sparse_sgemv8x4};

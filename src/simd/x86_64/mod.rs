@@ -17,6 +17,7 @@
 
 pub(crate) mod avx2;
 pub(crate) mod select;
+pub(crate) mod sparse8x4;
 pub(crate) mod sse2;
 pub(crate) mod sse41;
 #[cfg(feature = "x86-vnni")]
