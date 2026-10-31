@@ -96,10 +96,9 @@ End to end, plain `cargo bench`, tier v3 selected at runtime:
 | int8 full frame | 519 µs | **119 µs** (84× real time) |
 | legacy full frame | 40.2 µs | 38.1 µs |
 
-Tier v4 is behind the optional `x86-vnni` feature because the AVX-512 intrinsics
-and the `avx512f` target feature only became stable in Rust 1.89; enabling the
-feature does not force AVX-512 codegen, it only makes the kernel available for the
-runtime choice.
+Tier v4 is available on Rust ≥ 1.89 (AVX-512 intrinsics + `avx512f` target feature),
+which is why the crate's `rust-version` is 1.89. It does not force AVX-512 codegen:
+a binary built with 1.89+ runs tier v3 on an AVX2-only CPU and v4 on a Zen 4.
 
 Every int8 tier produces the **same exact integer** (products and pair sums fit in `i32`
 for the model's widths), so the quantized output is unchanged — the accuracy test

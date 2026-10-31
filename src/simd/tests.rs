@@ -39,7 +39,6 @@ fn every_x86_tier_matches_scalar() {
         unsafe { crate::simd::x86_64::avx2::dense_q8(&mut out, &w, &scale, M, ROWS, &qx) };
         assert_eq!(out, reference, "tier v3 (AVX2) diverged");
     }
-    #[cfg(feature = "x86-vnni")]
     if std::arch::is_x86_feature_detected!("avx512f")
         && std::arch::is_x86_feature_detected!("avx512vnni")
     {
@@ -57,7 +56,6 @@ fn every_x86_tier_matches_scalar() {
         assert_eq!(o, r, "tier v1 tail, width {width}");
         unsafe { crate::simd::x86_64::avx2::dense_q8(&mut o, &w, &scale, width, ROWS, &qx) };
         assert_eq!(o, r, "tier v3 tail, width {width}");
-        #[cfg(feature = "x86-vnni")]
         if std::arch::is_x86_feature_detected!("avx512f") {
             unsafe { crate::simd::x86_64::vnni::dense_q8(&mut o, &w, &scale, width, ROWS, &qx) };
             assert_eq!(o, r, "tier v4 tail, width {width}");
@@ -79,7 +77,6 @@ fn sdot_matches_scalar() {
     assert_eq!(out, reference, "sdot diverged");
 }
 
-#[cfg(feature = "x86-vnni")]
 #[test]
 fn vnni_bias_identity_is_exact() {
     // `vpdpbusd` is unsigned × signed, so tier v4 accumulates `Σ (w+128)·x` and

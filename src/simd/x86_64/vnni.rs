@@ -7,16 +7,12 @@
 //! at most `255 · 127` and the row sum at most `384 · 32385 ≈ 1.2e7`, still exact
 //! in `i32`, so the result equals the scalar reference exactly.
 //!
-//! This file needs Rust ≥ 1.89 (AVX-512 intrinsics and the `avx512f` target
-//! feature became stable there), so it is behind the optional `x86-vnni` feature.
-//! Selecting it is still a *runtime* decision: enabling the feature does not force
-//! AVX-512 codegen, `dispatch` only calls in when CPUID says the CPU has it.
+//! Needs Rust ≥ 1.89 for the AVX-512 intrinsics and the `avx512f` target feature
+//! (hence the crate's `rust-version`). Nothing here forces AVX-512 codegen
+//! anywhere else: `dispatch` calls in only when CPUID reports the CPU has it.
 
 use core::arch::x86_64::*;
 
-// Clippy checks these against `rust-version = 1.85`; the AVX-512 intrinsics became
-// stable in 1.89, which is why this tier is an opt-in feature (`x86-vnni`).
-#[allow(clippy::incompatible_msrv)]
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512vnni")]
 unsafe fn dot_biased(w: &[i8], x: &[i8], bias: i32) -> i32 {
