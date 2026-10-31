@@ -15,6 +15,9 @@ use core::arch::x86_64::*;
 
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512vnni")]
+// SAFETY: requires AVX-512F + AVX-512 VNNI; `select` only calls this after both
+// runtime detections. Unaligned 64-byte loads, equal-length slices; `vpdpbusd` is
+// unsigned x signed, which is why the caller passes the `128 * sum(x)` correction.
 unsafe fn dot_biased(w: &[i8], x: &[i8], bias: i32) -> i32 {
     let mut acc = _mm512_setzero_si512();
     // +128 as bytes: 0x80. `vpaddb` is modular, so this is the unsigned bias.

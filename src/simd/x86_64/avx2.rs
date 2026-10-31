@@ -15,6 +15,8 @@ unsafe fn hsum8(acc: __m256i) -> i32 {
 }
 
 #[target_feature(enable = "avx2")]
+// SAFETY: requires AVX2; `select` only calls this after `is_x86_feature_detected!("avx2")`.
+// Unaligned 16-byte loads, equal-length slices, exact int32 arithmetic.
 pub(crate) unsafe fn dot(w: &[i8], x: &[i8]) -> i32 {
     let n = w.len();
     let mut acc = _mm256_setzero_si256();

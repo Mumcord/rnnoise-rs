@@ -9,6 +9,8 @@ use core::arch::aarch64::*;
 /// reachable directly. Requires the `dotprod` target feature.
 #[target_feature(enable = "dotprod")]
 #[inline]
+// SAFETY: the `sdot` instruction needs `dotprod`; only reachable from the
+// target_feature functions below, which `select` guards with runtime detection.
 unsafe fn sdot(acc: int32x4_t, a: int8x16_t, b: int8x16_t) -> int32x4_t {
     let mut acc = acc;
     core::arch::asm!(
@@ -22,6 +24,10 @@ unsafe fn sdot(acc: int32x4_t, a: int8x16_t, b: int8x16_t) -> int32x4_t {
 }
 
 #[cfg(feature = "legacy-model")]
+// SAFETY: requires the `dotprod` feature; `select` only calls this after
+// `is_aarch64_feature_detected!("dotprod")`. Equal-length slices, exact int32.
+// SAFETY: requires the `dotprod` feature, checked at runtime by `select` before
+// calling here. Equal-length slices, exact int32 arithmetic.
 pub(crate) unsafe fn dot(w: &[i8], x: &[i8]) -> i32 {
     let n = w.len();
     let mut acc = vdupq_n_s32(0);

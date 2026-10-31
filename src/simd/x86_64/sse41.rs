@@ -13,6 +13,8 @@ unsafe fn hsum4(acc: __m128i) -> i32 {
 }
 
 #[target_feature(enable = "sse4.1")]
+// SAFETY: requires SSSE3/SSE4.1 (`pmovsxbw`); `select` only calls this after the
+// runtime detection. Unaligned loads, equal-length slices, exact int32 arithmetic.
 pub(crate) unsafe fn dot(w: &[i8], x: &[i8]) -> i32 {
     let n = w.len();
     let mut acc = _mm_setzero_si128();

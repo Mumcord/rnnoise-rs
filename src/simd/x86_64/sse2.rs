@@ -22,6 +22,9 @@ unsafe fn hsum4(acc: __m128i) -> i32 {
     _mm_cvtsi128_si32(v)
 }
 
+// SAFETY: requires SSE2, which every x86-64 CPU has; `select` only calls this
+// after `is_x86_feature_detected!("sse2")`. Loads are unaligned, `w.len() == x.len()`
+// is guaranteed by the caller, and all arithmetic is exact int32.
 pub(crate) unsafe fn dot(w: &[i8], x: &[i8]) -> i32 {
     let n = w.len();
     let mut acc = _mm_setzero_si128();
