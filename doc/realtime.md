@@ -63,7 +63,7 @@ costs hundreds of nanoseconds — not enough to break a 10 ms budget, but enough
 The crate deliberately does **not** set FTZ/DAZ (x86 `MXCSR`, aarch64 `FPCR`). Setting it
 is a per-thread process-wide state change, and for exactly those pathological inputs it
 would change results — which is outside the bit-exact parity contract. A caller that wants
-flushing (e.g. Mumcord's capture path) can set it itself; that is the caller's policy call,
+flushing (e.g. in the caller's capture path) can set it itself; that is the caller's policy call,
 not the crate's.
 
 ## Measured distribution
@@ -85,7 +85,7 @@ These are ~4 % above the pre-`Tier::resolve` numbers for the same code path — 
 per-call ladder walk dev added, and still ~56× headroom on the mean.
 
 The max/p99.9 tail is **OS noise** (scheduler, IRQ, page faults), not algorithmic work:
-the per-frame work is fixed, so the only way to see a 1 ms frame is to be descheduled. On
+the per-frame work is fixed, so the only way to see a 1 ms frame is to be preempted. On
 a pinned core under `SCHED_FIFO` the tail is much tighter; if you need a number for a
 specific deployment, measure there — the bench reports percentiles precisely so that
 measurement is comparable.

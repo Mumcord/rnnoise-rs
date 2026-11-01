@@ -181,15 +181,15 @@ fn main() {
     println!("\nrnnoise-rs (int8 quantized) per-frame:");
     let q = Arc::new(RnnModel::default().quantized());
     let mut qst = DenoiseState::new_with_model(q);
-    let qfull = measure(&mut qst, &active, &mut out, 200, iters);
-    report("  full (active)   ", &qfull);
-    let qfront = measure(&mut qst, &silent, &mut out, 200, iters);
-    report("  front-end (sil)  ", &qfront);
+    let quant_full = measure(&mut qst, &active, &mut out, 200, iters);
+    report("  full (active)   ", &quant_full);
+    let quant_front = measure(&mut qst, &silent, &mut out, 200, iters);
+    report("  front-end (sil)  ", &quant_front);
     println!(
         "  -> neural net ≈   mean {:>8.1} µs   (vs {:.1} float → {:.2}× speedup)",
-        (qfull.mean - qfront.mean) / 1000.0,
+        (quant_full.mean - quant_front.mean) / 1000.0,
         (full.mean - frontend.mean) / 1000.0,
-        (full.mean - frontend.mean) / (qfull.mean - qfront.mean)
+        (full.mean - frontend.mean) / (quant_full.mean - quant_front.mean)
     );
 
     #[cfg(feature = "legacy-model")]
@@ -198,13 +198,13 @@ fn main() {
         warmup();
         println!("\nrnnoise-rs (legacy / old model) per-frame:");
         let mut lst = DenoiseStateV1::new();
-        let lfull = measure_v1(&mut lst, &active, &mut out, 200, iters);
-        report("  full (active)   ", &lfull);
-        let lfront = measure_v1(&mut lst, &silent, &mut out, 200, iters);
-        report("  front-end (sil)  ", &lfront);
+        let legacy_full = measure_v1(&mut lst, &active, &mut out, 200, iters);
+        report("  full (active)   ", &legacy_full);
+        let legacy_front = measure_v1(&mut lst, &silent, &mut out, 200, iters);
+        report("  front-end (sil)  ", &legacy_front);
         println!(
             "  -> neural net ≈   mean {:>8.1} µs",
-            (lfull.mean - lfront.mean) / 1000.0
+            (legacy_full.mean - legacy_front.mean) / 1000.0
         );
     }
 }
