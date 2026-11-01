@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `Weights::Q8` carries a per-output-row `128 · Σ w` correction table, computed in
+  `LinearLayer::quantize`. Only the AVX-512 VNNI tier reads it — it is what lets that tier's hot
+  loop be one load plus one `vpdpbusd` per chunk instead of a load plus a `vpaddb` plus a
+  `vpdpbusd`. Internal (`Weights` is not public), so no public API change.
+
+### Changed
+
+- **x86-64 int8 tier v4 (AVX-512 VNNI)** — the `+128` that `vpdpbusd` needs is paid once per layer
+  instead of once per chunk, and the model's hot width (384 bytes = exactly 6 chunks) keeps the
+  biased activations in registers for the whole row loop with four independent accumulator chains.
+  Measured per row on a Zen 4 core (Ryzen 7 7800X3D), same binary, same data: 4.88 ns with the bias
+  in the loop, 4.77 hoisted to a buffer, **3.06** hoisted into registers with four accumulators;
+  end to end on that box 52.8 µs → 45.5 µs of network per frame. Exact integer arithmetic
+  throughout, so tier v4 stays bit-identical to `simd::scalar` (issue #16).
+
+
 ### Changed
 
 - **Style ruleset**: the adopted subset of the Google Rust style guide is now
