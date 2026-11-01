@@ -36,6 +36,26 @@ pub(crate) fn sparse_sgemv8x4(out: &mut [f32], w: &[f32], idx: &[i32], rows: usi
     crate::simd::scalar::sparse_sgemv8x4(out, w, idx, rows, x);
 }
 
+pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
+    if std::arch::is_x86_feature_detected!("avx2") {
+        unsafe { x86_64::dense::dense_sgemv(out, w, m, n, x) };
+        return;
+    }
+    crate::simd::scalar::dense_sgemv(out, w, m, n, x);
+}
+
+pub(crate) fn xcorr(out: &mut [f32], x: &[f32], y: &[f32], n: usize, max_pitch: usize) {
+    if std::arch::is_x86_feature_detected!("avx2") {
+        unsafe { x86_64::xcorr::xcorr8(out, x, y, n, max_pitch) };
+        return;
+    }
+    if std::arch::is_x86_feature_detected!("sse2") {
+        unsafe { x86_64::xcorr::xcorr4(out, x, y, n, max_pitch) };
+        return;
+    }
+    crate::simd::scalar::xcorr(out, x, y, n, max_pitch);
+}
+
 #[cfg(feature = "legacy-model")]
 pub(crate) fn i8_dot(w: &[i8], x: &[i8]) -> i32 {
     // Tier v4 is not used here: `vpdpbusd` is unsigned × signed, so it needs the

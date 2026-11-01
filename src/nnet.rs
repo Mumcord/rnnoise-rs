@@ -199,16 +199,8 @@ fn for_each_block(idx: &[i32], rows: usize, mut f: impl FnMut(usize, usize, usiz
 /// Dense float GEMV as a sequence of SAXPYs (j outer, i inner): streams the
 /// matrix sequentially (cache-friendly, auto-vectorisable) while preserving the
 /// per-`out[i]` accumulation order, so it is bit-identical to the C reference.
-fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, input: &[f32]) {
-    for v in out.iter_mut() {
-        *v = 0.0;
-    }
-    for (j, &xj) in input[..m].iter().enumerate() {
-        let row = &w[j * n..j * n + n];
-        for (o, &wv) in out.iter_mut().zip(row.iter()) {
-            *o += wv * xj;
-        }
-    }
+pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, input: &[f32]) {
+    crate::simd::dense_sgemv(out, w, m, n, input);
 }
 
 /// Largest input width of a quantized layer (conv2 and the GRUs are all 384).

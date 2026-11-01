@@ -103,6 +103,61 @@ fn vnni_bias_identity_is_exact() {
 
 #[cfg(target_arch = "x86_64")]
 #[test]
+fn avx2_dense_sgemv_matches_scalar() {
+    // Model-shaped widths (conv2, the GRUs) plus a width that is not a multiple of the
+    // vector size, which exercises the per-output tail.
+    let mut s = 21u32;
+    let mut rng = || {
+        s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        ((s >> 8) as f32) / 16_777_216.0 - 0.5
+    };
+    for (m, n) in [(384usize, 1152), (384, 384), (1536, 32), (65, 128), (7, 33)] {
+        let w: Vec<f32> = (0..m * n).map(|_| rng()).collect();
+        let x: Vec<f32> = (0..m).map(|_| rng()).collect();
+        let mut a = vec![0.0f32; n];
+        let mut b = vec![0.0f32; n];
+        scalar::dense_sgemv(&mut a, &w, m, n, &x);
+        unsafe { crate::simd::x86_64::dense::dense_sgemv(&mut b, &w, m, n, &x) };
+        assert_eq!(b, a, "AVX2 dense GEMV diverged for {m}x{n}");
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn xcorr_tiers_match_scalar() {
+    // Pitch-search shape: `y` holds `n + max_pitch` entries. Sizes that are not a
+    // multiple of the vector width exercise the per-lag tail of every tier.
+    let n = 240;
+    for max_pitch in [147usize, 384, 5] {
+        let mut s = 99u32;
+        let mut next = || {
+            s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+            (s >> 8) as f32 / 16_777_216.0 - 0.5
+        };
+        let x: Vec<f32> = (0..n).map(|_| next()).collect();
+        let y: Vec<f32> = (0..n + max_pitch).map(|_| next()).collect();
+        let mut reference = vec![0.0f32; max_pitch];
+        scalar::xcorr(&mut reference, &x, &y, n, max_pitch);
+
+        let mut out = vec![0.0f32; max_pitch];
+        unsafe { crate::simd::x86_64::xcorr::xcorr4(&mut out, &x, &y, n, max_pitch) };
+        assert_eq!(
+            out, reference,
+            "xcorr tier v1 (SSE2) diverged at {max_pitch}"
+        );
+        if std::arch::is_x86_feature_detected!("avx2") {
+            out.iter_mut().for_each(|v| *v = 0.0);
+            unsafe { crate::simd::x86_64::xcorr::xcorr8(&mut out, &x, &y, n, max_pitch) };
+            assert_eq!(
+                out, reference,
+                "xcorr tier v3 (AVX2) diverged at {max_pitch}"
+            );
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[test]
 fn avx2_sparse8x4_matches_scalar() {
     if !std::arch::is_x86_feature_detected!("avx2") {
         return;

@@ -17,6 +17,16 @@ pub(crate) fn dense_q8(out: &mut [f32], w: &[i8], scale: &[f32], m: usize, n: us
 }
 
 #[cfg(target_arch = "x86_64")]
+pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
+    crate::simd::x86_64::select::dense_sgemv(out, w, m, n, x);
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
+    crate::simd::scalar::dense_sgemv(out, w, m, n, x);
+}
+
+#[cfg(target_arch = "x86_64")]
 pub(crate) fn sparse_sgemv8x4(out: &mut [f32], w: &[f32], idx: &[i32], rows: usize, x: &[f32]) {
     crate::simd::x86_64::select::sparse_sgemv8x4(out, w, idx, rows, x);
 }
@@ -29,6 +39,19 @@ pub(crate) fn sparse_sgemv8x4(out: &mut [f32], w: &[f32], idx: &[i32], rows: usi
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
 pub(crate) fn sparse_sgemv8x4(out: &mut [f32], w: &[f32], idx: &[i32], rows: usize, x: &[f32]) {
     crate::simd::scalar::sparse_sgemv8x4(out, w, idx, rows, x);
+}
+
+/// Pitch cross-correlation. Only x86-64 has a vector tier; on other targets the
+/// portable reference (which compilers vectorize well, since each lag is its own
+/// chain) is already the fast path.
+#[cfg(target_arch = "x86_64")]
+pub(crate) fn xcorr(out: &mut [f32], x: &[f32], y: &[f32], n: usize, max_pitch: usize) {
+    crate::simd::x86_64::select::xcorr(out, x, y, n, max_pitch);
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+pub(crate) fn xcorr(out: &mut [f32], x: &[f32], y: &[f32], n: usize, max_pitch: usize) {
+    crate::simd::scalar::xcorr(out, x, y, n, max_pitch);
 }
 
 #[cfg(feature = "legacy-model")]
