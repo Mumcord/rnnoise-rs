@@ -13,7 +13,7 @@
 //! they produce identical bits. Tier selection is runtime, not build time.
 
 mod dispatch;
-mod plan;
+mod kiss_fft;
 mod scalar;
 mod spectrum;
 
@@ -23,5 +23,5 @@ mod x86_64;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use plan::KissFft;
+pub(crate) use kiss_fft::KissFft;
 pub(crate) use spectrum::Cpx;

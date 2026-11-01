@@ -2,6 +2,12 @@
 //! (scalar `_c` path, float weights). Covers the dense/sparse affine transform,
 //! Conv1D, GRU, and the tanh/sigmoid rational-polynomial approximations.
 
+// Style gate (doc/styleguide.md C9): these are the arithmetic, not style
+#![allow(
+    clippy::excessive_precision,
+    clippy::manual_clamp,
+    clippy::needless_range_loop
+)]
 /// Activation kinds used by the RNNoise model.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Activation {
@@ -389,8 +395,11 @@ mod tests {
 
     #[test]
     fn activations_bounds() {
-        assert!((tanh_approx(0.0)).abs() < 1e-6);
-        assert!((sigmoid_approx(0.0) - 0.5).abs() < 1e-6);
+        assert!((tanh_approx(0.0)).abs() < 1e-6, "tanh_approx(0) must be 0");
+        assert!(
+            (sigmoid_approx(0.0) - 0.5).abs() < 1e-6,
+            "sigmoid_approx(0) must be 0.5"
+        );
         assert!(tanh_approx(100.0) <= 1.0 && tanh_approx(100.0) > 0.999);
         assert!(tanh_approx(-100.0) >= -1.0 && tanh_approx(-100.0) < -0.999);
     }

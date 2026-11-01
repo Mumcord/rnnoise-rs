@@ -2,8 +2,10 @@
 //! band-gain interpolation, the high-pass biquad and the FFT-based
 //! forward/inverse transforms. All ported from `denoise.c` / `rnnoise_tables.c`.
 
+// Style gate (doc/styleguide.md C9): these are the arithmetic, not style
+#![allow(clippy::needless_range_loop)]
 use crate::fft::{Cpx, KissFft};
-use crate::{EBAND20MS, FRAME_SIZE, FREQ_SIZE, NB_BANDS, WINDOW_SIZE};
+use crate::params::{EBAND20MS, FRAME_SIZE, FREQ_SIZE, NB_BANDS, WINDOW_SIZE};
 
 /// Precomputed tables + the FFT plan, built once and shared by every
 /// [`crate::DenoiseState`].

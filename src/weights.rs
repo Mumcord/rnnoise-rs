@@ -204,36 +204,43 @@ fn linear(
         return Err(ModelError::BadSize(bias.to_string()));
     }
     let float_weights = f32_array(arrays, weights)?;
-    let weights_idx = idx.map(|n| i32_array(arrays, n)).transpose()?;
-    let diag_v = diag.map(|n| f32_array(arrays, n)).transpose()?;
+    // The array name is carried alongside the value so the size errors can name it
+    // without a second lookup, which is what lets these checks be pattern matches
+    // instead of check-then-unwrap.
+    let idx_named = idx
+        .map(|n| i32_array(arrays, n).map(|v| (n, v)))
+        .transpose()?;
+    let diag_named = diag
+        .map(|n| f32_array(arrays, n).map(|v| (n, v)))
+        .transpose()?;
 
     // Size checks mirroring `linear_init`.
-    match &weights_idx {
+    match &idx_named {
         None => {
             if float_weights.len() != nb_inputs * nb_outputs {
                 return Err(ModelError::BadSize(weights.to_string()));
             }
         }
-        Some(idxv) => {
+        Some((name, idxv)) => {
             let total_blocks = sparse_total_blocks(idxv, nb_outputs)
-                .ok_or_else(|| ModelError::BadSize(idx.unwrap().to_string()))?;
+                .ok_or_else(|| ModelError::BadSize(name.to_string()))?;
             if float_weights.len() != 32 * total_blocks {
                 return Err(ModelError::BadSize(weights.to_string()));
             }
         }
     }
-    if let Some(d) = &diag_v {
+    if let Some((name, d)) = &diag_named {
         if d.len() != nb_outputs {
-            return Err(ModelError::BadSize(diag.unwrap().to_string()));
+            return Err(ModelError::BadSize(name.to_string()));
         }
     }
 
     // A complete, ascending sparse index is dense-equivalent: same values, same
     // accumulation order per output, so the fast GEMV tier can be used.
-    let dense = weights_idx.as_ref().and_then(|idxv| {
+    let dense = idx_named.as_ref().and_then(|(_, idxv)| {
         complete_ascending_dense_form(idxv, &float_weights, nb_inputs, nb_outputs)
     });
-    let is_dense = dense.is_some() || weights_idx.is_none();
+    let is_dense = dense.is_some() || idx_named.is_none();
     // A dense layer whose outputs all sit in complete groups can be stored in the
     // block-major form, which is what lets the tier keep accumulators in registers.
     let use_blocks = is_dense && nb_outputs.is_multiple_of(8);
@@ -247,8 +254,12 @@ fn linear(
     Ok(LinearLayer {
         bias: bias_v,
         weights: Weights::Float(stored),
-        weights_idx: if is_dense { None } else { weights_idx },
-        diag: diag_v,
+        weights_idx: if is_dense {
+            None
+        } else {
+            idx_named.map(|(_, v)| v)
+        },
+        diag: diag_named.map(|(_, v)| v),
         nb_inputs,
         nb_outputs,
         dense_layout: if use_blocks {
@@ -470,8 +481,9 @@ mod block_form_tests {
 
         let mut a = row.clone();
         let mut b = block.clone();
-        a.sort_by(|x, y| x.partial_cmp(y).unwrap());
-        b.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        // LCG values are never NaN, so the ordering is total here.
+        a.sort_by(|x, y| x.partial_cmp(y).expect("fixture values are never NaN"));
+        b.sort_by(|x, y| x.partial_cmp(y).expect("fixture values are never NaN"));
         assert_eq!(a, b, "block form must hold exactly the same values");
 
         // ... and the two kernels must therefore produce the same bits.
