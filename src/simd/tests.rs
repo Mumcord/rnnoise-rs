@@ -21,6 +21,18 @@ fn fixture() -> (Vec<i8>, Vec<i8>, Vec<f32>) {
     (w, qx, scale)
 }
 
+/// Reports what this CPU can actually run. A green CI run is not coverage of a tier that
+/// was skipped, so the test says which tiers it exercised; `is_x86_feature_detected!` needs
+/// a literal feature name, so there is no loop here.
+#[cfg(target_arch = "x86_64")]
+fn tier_coverage(skipped: &[&str]) {
+    if skipped.is_empty() {
+        eprintln!("x86-64 tier coverage: every tier ran here");
+    } else {
+        eprintln!("x86-64 tier coverage: skipped {skipped:?} (not detected on this CPU)");
+    }
+}
+
 #[cfg(target_arch = "x86_64")]
 #[test]
 fn every_x86_tier_matches_scalar() {
@@ -32,22 +44,32 @@ fn every_x86_tier_matches_scalar() {
     unsafe { crate::simd::x86_64::sse2::dense_q8(&mut out, &w, &scale, M, ROWS, &qx) };
     assert_eq!(out, reference, "tier v1 (SSE2) diverged");
 
-    if std::arch::is_x86_feature_detected!("sse4.1") {
+    let mut skipped = Vec::new();
+    let sse41 = std::arch::is_x86_feature_detected!("sse4.1");
+    let avx2 = std::arch::is_x86_feature_detected!("avx2");
+    let vnni = std::arch::is_x86_feature_detected!("avx512f")
+        && std::arch::is_x86_feature_detected!("avx512vnni");
+
+    if sse41 {
         out.iter_mut().for_each(|v| *v = 0.0);
         unsafe { crate::simd::x86_64::sse41::dense_q8(&mut out, &w, &scale, M, ROWS, &qx) };
         assert_eq!(out, reference, "tier v2 (SSE4.1) diverged");
+    } else {
+        skipped.push("v2 (SSE4.1)");
     }
-    if std::arch::is_x86_feature_detected!("avx2") {
+    if avx2 {
         out.iter_mut().for_each(|v| *v = 0.0);
         unsafe { crate::simd::x86_64::avx2::dense_q8(&mut out, &w, &scale, M, ROWS, &qx) };
         assert_eq!(out, reference, "tier v3 (AVX2) diverged");
+    } else {
+        skipped.push("v3 (AVX2)");
     }
-    if std::arch::is_x86_feature_detected!("avx512f")
-        && std::arch::is_x86_feature_detected!("avx512vnni")
-    {
+    if vnni {
         out.iter_mut().for_each(|v| *v = 0.0);
         unsafe { crate::simd::x86_64::vnni::dense_q8(&mut out, &w, &scale, M, ROWS, &qx) };
         assert_eq!(out, reference, "tier v4 (VNNI) diverged");
+    } else {
+        skipped.push("v4 (VNNI)");
     }
 
     // Widths that are not a multiple of the vector size exercise the tail loops.
@@ -59,11 +81,13 @@ fn every_x86_tier_matches_scalar() {
         assert_eq!(o, r, "tier v1 tail, width {width}");
         unsafe { crate::simd::x86_64::avx2::dense_q8(&mut o, &w, &scale, width, ROWS, &qx) };
         assert_eq!(o, r, "tier v3 tail, width {width}");
-        if std::arch::is_x86_feature_detected!("avx512f") {
+        if vnni {
             unsafe { crate::simd::x86_64::vnni::dense_q8(&mut o, &w, &scale, width, ROWS, &qx) };
             assert_eq!(o, r, "tier v4 tail, width {width}");
         }
     }
+
+    tier_coverage(&skipped);
 }
 
 #[cfg(target_arch = "aarch64")]

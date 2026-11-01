@@ -68,6 +68,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Tier-equality tests: every float and int8 kernel is asserted bit-identical to its
   portable reference (`simd/tests.rs`, `fft/tests.rs`, `common/tests`, and
   `weights/tests` for the dense-equivalence of a complete ascending index).
+- CI gate for the SIMD tiers, since a skipped tier is not coverage: each run prints the
+  runner's ISA flags and the tiers it exercised, and the `simd-tier-coverage` job runs the
+  tier-equality tests on a real AVX-512 + VNNI machine when one is wired up through the
+  repository variable `avx512_runner`, failing if a tier is skipped. What is provable without
+  the hardware (tier v4's `128 · Σ q_x` bias identity) is asserted unconditionally, on every
+  runner.
 
 ### Fixed
 
