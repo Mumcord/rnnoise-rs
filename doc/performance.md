@@ -22,8 +22,8 @@ rounds. Run-to-run spread is ~5 %, so read these as ratios.
 |---|--:|--:|---|
 | current model, float (default) | ~312 µs | ~32× | bit-exact with C, zero deps |
 | current model, int8 + `sdot` (aarch64) | ~105 µs | ~95× | opt-in, audibly identical |
-| current model, int8 + `pmaddwd` (x86-64, Zen 3) | ~104 µs | ~96× | runtime-detected AVX2; **4.9× vs the baseline** (which had no x86 int8 kernel at all) |
-| current model, float, x86-64 Zen 3 | ~205 µs | ~49× | **1.49×** vs the baseline; see the x86-64 section below |
+| current model, int8 + `pmaddwd` (x86-64, Zen 3) | ~100 µs | ~100× | runtime-detected AVX2; **4.9× vs the baseline** (which had no x86 int8 kernel at all) |
+| current model, float, x86-64 Zen 3 | ~157 µs | ~63× | **1.36×** vs `4a26f93`, **1.64×** vs the baseline; see the x86-64 sections below |
 | legacy model (`legacy-model`), M4 Pro | ~26 µs | ~309× | **faster than `nnnoiseless`** |
 | legacy model, x86-64 Zen 3 | ~33 µs | ~299× | **1.21×** vs the baseline |
 | — `nnnoiseless` (same old model) | ~28 µs | ~290× | for reference |
@@ -165,10 +165,47 @@ for every tier the CPU reports, skipping the others. The VNNI bias identity
 (`Σ(w+128)·x − 128·Σx == Σ w·x`) is also unit-tested in pure Rust, so it is checked
 even on runners without AVX-512.
 
+### Block-major dense float GEMV (parity-safe, x86-64 tier)
+
+In the row-major GEMV each output keeps its own accumulator, so a group of eight outputs
+costs a load and a store of that accumulator on top of the multiply and add: 2 loads + 1
+store + 2 FP ops per 8 MACs. Storing the same values **grouped per output block** — eight
+outputs' weights contiguous over `j` — lets the tier keep the accumulator in a register for
+the whole `j` walk, and running four groups at once puts four independent add chains in
+flight. It is a permutation of the same floats, and every output still sums in ascending
+`j`, so the bits are identical: `rnnoise-demo` on `test_data/testing.raw` outputs the same
+bytes as before the change, and the parity harness reports the same numbers.
+
+Measured on a Zen 3 core (same toolchain, one core pinned, isolated layer call):
+
+| layer shape | row-major | block-major | ratio |
+|---|--:|--:|--:|
+| 384×1152 (the GRU matrices) | 20.7 µs | 15.3 µs | 1.35× |
+| 384×384 (conv2) | 12.5 | 6.6 | 1.9× |
+| 195×128 (conv1) | 2.2 | 0.8 | 2.7× |
+| 1536×32 (dense_out) | 5.0 | 1.4 | 3.6× |
+
+End to end, five alternating rounds (the comparison build is the committed tree, tier v3
+selected at runtime):
+
+| | before | after |
+|---|--:|--:|
+| float full frame | 213.5 µs | **157.4 µs** (46.8× → 63.5× real time) |
+| — float neural net | 192.0 µs | **135.7 µs** (1.41×) |
+| — float front-end | 21.5 µs | 21.7 µs (unchanged) |
+| int8 full frame | 102.8 µs | 99.5 µs (layout does not apply: its dot is already contiguous per output) |
+| end-to-end CLI, 100 s, min of 5 | 2.131 s | **1.593 s** (1.34×) |
+
+Without a fused multiply-add the ceiling is 8 MACs/cycle (one 32-byte weight load plus one
+mul and one add per group of eight). The row-major shape reaches ~5.1, the block shape ~6.7,
+so the float GEMV is now within about 20% of what this core can do; the remaining step is
+FMA, which changes the rounding and is therefore not allowed by the parity bound.
+
 ## Head-to-head against the pre-SIMD baseline (`74b46b1`)
 
 Means of four alternating rounds on the pinned Zen 3 core, both builds from the same
-toolchain and profile:
+toolchain and profile. These are the numbers at `4a26f93`; the block-major change above sits
+on top of them.
 
 | path | metric | `74b46b1` | HEAD (`4a26f93`) | speedup | real-time |
 |---|--:|--:|--:|--:|--:|
@@ -213,7 +250,7 @@ The parity harness reports the same numbers on both builds
 ## Choosing a configuration
 
 - **Default (float):** highest quality, bit-exact with the C reference up to a handful of
-  1-LSB roundings, zero deps, ~32× real time on M4 Pro (~49× on the Zen 3 core) —
+  1-LSB roundings, zero deps, ~32× real time on M4 Pro (~63× on the Zen 3 core) —
   fine for real-time on one core with lots of headroom.
 - **int8 (`.quantized()`):** ~3× faster than float on aarch64, ~4.9× faster than the
   pre-SIMD x86 baseline (~2.0× faster than float on this Zen 3 core), ~4× smaller,
@@ -255,3 +292,13 @@ See [`BENCHMARKS.md`](../BENCHMARKS.md) §"How to speed up" and
 [`TODO.md`](../TODO.md): x86 VNNI for the int8 kernel, f16 SIMD, multi-threading
 the GEMVs for batch, and a real-input FFT for the current model (the SIMD tier is done;
 a real-input transform would relax its bit-exactness bound).
+
+Two measured but not yet implemented levers:
+
+- **int8 activations pre-widened to int16.** The AVX2 dot widens `x` inside every row
+  (2 µops per block). Widening once per call instead of once per row gives 7.06 → 6.47 µs
+  per 384×1152 call (+8.4%) on this core, and integer arithmetic makes the two forms
+  identical. It was left out because the `sdot` and VNNI tiers need the byte form, so the
+  kernel would have to carry both.
+- **8-lane butterflies for the FFT.** The tier is 4 lanes (SSE2) and the radix-2 stage is
+  still scalar; an AVX2 version saves roughly 1.5 µs per transform, ~4 µs per frame.

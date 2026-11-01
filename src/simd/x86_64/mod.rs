@@ -21,6 +21,7 @@
 
 pub(crate) mod avx2;
 pub(crate) mod dense;
+pub(crate) mod dense_blocks;
 pub(crate) mod select;
 pub(crate) mod sparse8x4;
 pub(crate) mod sse2;

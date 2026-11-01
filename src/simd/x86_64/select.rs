@@ -36,6 +36,14 @@ pub(crate) fn sparse_sgemv8x4(out: &mut [f32], w: &[f32], idx: &[i32], rows: usi
     crate::simd::scalar::sparse_sgemv8x4(out, w, idx, rows, x);
 }
 
+pub(crate) fn dense_sgemv_blocks(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
+    if std::arch::is_x86_feature_detected!("avx2") {
+        unsafe { x86_64::dense_blocks::dense_sgemv_blocks(out, w, m, n, x) };
+        return;
+    }
+    crate::simd::scalar::dense_sgemv_blocks(out, w, m, n, x);
+}
+
 pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
     if std::arch::is_x86_feature_detected!("avx2") {
         unsafe { x86_64::dense::dense_sgemv(out, w, m, n, x) };

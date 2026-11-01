@@ -188,3 +188,59 @@ fn avx2_sparse8x4_matches_scalar() {
         "AVX2 sparse kernel diverged from the scalar reference"
     );
 }
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn block_major_tier_matches_row_major_reference() {
+    // The block form is the same values permuted (`w[(o/8)*8*m + j*8 + o%8]`), and each
+    // output still accumulates in ascending `j`, so the bits must be identical. The sizes
+    // include a non-multiple-of-8 `n`, which exercises the per-output tail.
+    let mut s = 31u32;
+    let mut rng = || {
+        s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+        ((s >> 8) as f32) / 16_777_216.0 - 0.5
+    };
+
+    fn block_form(row: &[f32], m: usize, n: usize) -> Vec<f32> {
+        let groups = n / 8;
+        let mut out = vec![0.0f32; row.len()];
+        for j in 0..m {
+            for o in 0..n {
+                let dst = if o < groups * 8 {
+                    (o / 8) * 8 * m + j * 8 + (o % 8)
+                } else {
+                    groups * 8 * m + (o - groups * 8) * m + j
+                };
+                out[dst] = row[j * n + o];
+            }
+        }
+        out
+    }
+
+    for (m, n) in [
+        (384usize, 1152),
+        (384, 384),
+        (1536, 32),
+        (65, 128),
+        (7, 33),
+        (12, 8),
+    ] {
+        let row: Vec<f32> = (0..m * n).map(|_| rng()).collect();
+        let x: Vec<f32> = (0..m).map(|_| rng()).collect();
+        let block = block_form(&row, m, n);
+
+        let mut a = vec![0.0f32; n];
+        let mut b = vec![0.0f32; n];
+        scalar::dense_sgemv(&mut a, &row, m, n, &x);
+        scalar::dense_sgemv_blocks(&mut b, &block, m, n, &x);
+        assert_eq!(b, a, "block-major reference diverged for {m}x{n}");
+
+        if std::arch::is_x86_feature_detected!("avx2") {
+            b.iter_mut().for_each(|v| *v = 0.0);
+            unsafe {
+                crate::simd::x86_64::dense_blocks::dense_sgemv_blocks(&mut b, &block, m, n, &x)
+            };
+            assert_eq!(b, a, "AVX2 block-major tier diverged for {m}x{n}");
+        }
+    }
+}

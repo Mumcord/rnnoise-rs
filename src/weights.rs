@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::nnet::{LinearLayer, Weights};
+use crate::nnet::{DenseLayout, LinearLayer, Weights};
 
 /// The default RNNoise model (float weights), embedded in the binary.
 static DEFAULT_MODEL_BLOB: &[u8] = include_bytes!("../models/rnnoise_default.bin");
@@ -170,6 +170,25 @@ fn complete_ascending_dense_form(idx: &[i32], w: &[f32], m: usize, n: usize) -> 
     Some(dense)
 }
 
+/// The same `n * m` floats, permuted into the block-major form that
+/// [`crate::simd::dense_sgemv_blocks`] expects: one contiguous run of `m` values per group
+/// of eight outputs, plus a run per output for any incomplete last group.
+fn block_major_form(dense: &[f32], m: usize, n: usize) -> Vec<f32> {
+    let groups = n / 8;
+    let mut out = vec![0.0f32; dense.len()];
+    for j in 0..m {
+        for o in 0..n {
+            let dst = if o < groups * 8 {
+                (o / 8) * 8 * m + j * 8 + (o % 8)
+            } else {
+                groups * 8 * m + (o - groups * 8) * m + j
+            };
+            out[dst] = dense[j * n + o];
+        }
+    }
+    out
+}
+
 /// Build a dense or sparse layer, validating bias/weight sizes (`linear_init`).
 fn linear(
     arrays: &HashMap<&str, Array<'_>>,
@@ -211,28 +230,32 @@ fn linear(
 
     // A complete, ascending sparse index is dense-equivalent: same values, same
     // accumulation order per output, so the fast GEMV tier can be used.
-    if let Some(idxv) = &weights_idx {
-        if let Some(dense) =
-            complete_ascending_dense_form(idxv, &float_weights, nb_inputs, nb_outputs)
-        {
-            return Ok(LinearLayer {
-                bias: bias_v,
-                weights: Weights::Float(dense),
-                weights_idx: None,
-                diag: diag_v,
-                nb_inputs,
-                nb_outputs,
-            });
-        }
-    }
+    let dense = weights_idx.as_ref().and_then(|idxv| {
+        complete_ascending_dense_form(idxv, &float_weights, nb_inputs, nb_outputs)
+    });
+    let is_dense = dense.is_some() || weights_idx.is_none();
+    // A dense layer whose outputs all sit in complete groups can be stored in the
+    // block-major form, which is what lets the tier keep accumulators in registers.
+    let use_blocks = is_dense && nb_outputs.is_multiple_of(8);
+    let stored = match (dense, use_blocks) {
+        (Some(d), true) => block_major_form(&d, nb_inputs, nb_outputs),
+        (Some(d), false) => d,
+        (None, true) => block_major_form(&float_weights, nb_inputs, nb_outputs),
+        (None, false) => float_weights,
+    };
 
     Ok(LinearLayer {
         bias: bias_v,
-        weights: Weights::Float(float_weights),
-        weights_idx,
+        weights: Weights::Float(stored),
+        weights_idx: if is_dense { None } else { weights_idx },
         diag: diag_v,
         nb_inputs,
         nb_outputs,
+        dense_layout: if use_blocks {
+            DenseLayout::Blocks8
+        } else {
+            DenseLayout::RowMajor
+        },
     })
 }
 
@@ -427,5 +450,61 @@ mod tests {
             model.gru1_input.nb_inputs * model.gru1_input.nb_outputs,
             384 * 1152
         );
+    }
+}
+
+#[cfg(test)]
+mod block_form_tests {
+    use super::*;
+
+    #[test]
+    fn block_form_is_only_a_permutation() {
+        let (m, n) = (16usize, 24usize);
+        let mut s = 17u32;
+        let mut rng = || {
+            s = s.wrapping_mul(1664525).wrapping_add(1013904223);
+            ((s >> 8) as f32) / 16_777_216.0 - 0.5
+        };
+        let row: Vec<f32> = (0..m * n).map(|_| rng()).collect();
+        let block = block_major_form(&row, m, n);
+
+        let mut a = row.clone();
+        let mut b = block.clone();
+        a.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        b.sort_by(|x, y| x.partial_cmp(y).unwrap());
+        assert_eq!(a, b, "block form must hold exactly the same values");
+
+        // ... and the two kernels must therefore produce the same bits.
+        let x: Vec<f32> = (0..m).map(|_| rng()).collect();
+        let mut o1 = vec![0.0f32; n];
+        let mut o2 = vec![0.0f32; n];
+        crate::simd::dense_sgemv(&mut o1, &row, m, n, &x);
+        crate::simd::dense_sgemv_blocks(&mut o2, &block, m, n, &x);
+        assert_eq!(o1, o2, "block form changed a bit");
+    }
+
+    #[test]
+    fn default_model_layers_use_the_block_form_where_possible() {
+        let model = RnnModel::default();
+        for layer in [
+            &model.conv1,
+            &model.conv2,
+            &model.gru1_input,
+            &model.gru1_recurrent,
+            &model.gru2_input,
+            &model.gru2_recurrent,
+            &model.gru3_input,
+            &model.gru3_recurrent,
+            &model.dense_out,
+        ] {
+            assert_eq!(
+                layer.dense_layout,
+                DenseLayout::Blocks8,
+                "layer with {} outputs should be in block form",
+                layer.nb_outputs
+            );
+        }
+        // `vad_dense` has a single output, so it cannot form a group of eight.
+        assert_eq!(model.vad_dense.dense_layout, DenseLayout::RowMajor);
     }
 }

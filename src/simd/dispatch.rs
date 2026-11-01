@@ -21,6 +21,19 @@ pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f
     crate::simd::x86_64::select::dense_sgemv(out, w, m, n, x);
 }
 
+/// Block-major dense GEMV: the same values in a permuted layout, so the tier can keep one
+/// accumulator per output group in a register. Only x86-64 has a tier; elsewhere the
+/// reference is already the fast path.
+#[cfg(target_arch = "x86_64")]
+pub(crate) fn dense_sgemv_blocks(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
+    crate::simd::x86_64::select::dense_sgemv_blocks(out, w, m, n, x);
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+pub(crate) fn dense_sgemv_blocks(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
+    crate::simd::scalar::dense_sgemv_blocks(out, w, m, n, x);
+}
+
 #[cfg(not(target_arch = "x86_64"))]
 pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
     crate::simd::scalar::dense_sgemv(out, w, m, n, x);

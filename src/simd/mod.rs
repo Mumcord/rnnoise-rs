@@ -1,5 +1,5 @@
 //! Runtime-dispatched kernels: the int8 dot products for the quantized matmuls, the
-//! float GEMV, and the pitch cross-correlation.
+//! float GEMV (row-major and block-major), and the pitch cross-correlation.
 //!
 //! Every int8 kernel computes the **same exact `i32` result**: for the model's widths
 //! every product and pair sum fits in `i32` (max `384 · 127 · 127 ≈ 6.2e6`), so no
@@ -28,4 +28,4 @@ mod tests;
 
 #[cfg(feature = "legacy-model")]
 pub(crate) use dispatch::i8_dot;
-pub(crate) use dispatch::{dense_q8, dense_sgemv, sparse_sgemv8x4, xcorr};
+pub(crate) use dispatch::{dense_q8, dense_sgemv, dense_sgemv_blocks, sparse_sgemv8x4, xcorr};

@@ -55,12 +55,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Zen 3 core: float NN 239 → 192 µs/frame.
 - `Common` precomputes the triangular band weights `j / band_size` with the same f32
   division the runtime used to do, removing ~317 float divisions per band pass.
+- `simd::dense_sgemv_blocks`: a dense float layer whose outputs form complete groups of
+  eight is stored in a **block-major** permutation of the same values
+  (`w[(o/8)*8*m + j*8 + o%8]`), so the AVX2 tier keeps four group accumulators in registers
+  for the whole `j` walk instead of loading and storing them once per block — four
+  independent add chains in flight, one 32-byte weight load per eight MACs. Every output
+  still sums in ascending `j`, so the bits are unchanged (`simd/tests.rs` asserts
+  tier == reference, and `rnnoise-demo` output on `test_data/testing.raw` is byte-for-byte
+  identical). On a Zen 3 core: 384×1152 20.7 → 15.3 µs per call, conv2 12.5 → 6.6,
+  conv1 2.2 → 0.8, dense_out 5.0 → 1.4; full frame 213.5 → 157.4 µs (63.5× real time),
+  neural net 192.0 → 135.7 µs.
 
 End to end on an AMD Zen 3 core (plain `cargo bench`, tier v3 selected at runtime, best
 of runs): float full frame **270.6 → 208–216 µs** (≈1.3×, 46–48× real time), its DSP
 front-end **31.6 → 21.8 µs**; int8 full frame **116.8 → 102–107 µs** (94–98× real
 time); legacy **38.1 → 33.8 µs**. Parity is unchanged: 3 samples of 47 520 differ by
 1 LSB, relative energy `2.003e-10`.
+
 ### Changes
 
 - `rust-version` raised to **1.89** so the AVX-512 VNNI tier is unconditional

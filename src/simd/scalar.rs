@@ -58,6 +58,40 @@ pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f
     }
 }
 
+/// Dense float GEMV over the **block-major** form of the same matrix.
+///
+/// `w` holds the identical values as [`dense_sgemv`]'s row-major matrix, permuted so
+/// that the eight outputs of a group are contiguous over `j`:
+/// `w[(o / 8) * 8 * m + j * 8 + (o % 8)]`. Each output still receives its contributions
+/// in ascending `j`, so the bits are identical — the layout is a permutation, not an
+/// arithmetic change. It exists so a tier can hold one accumulator per group in a
+/// register for the whole `j` walk instead of round-tripping the accumulators through
+/// memory. Outputs that do not complete a group keep a contiguous run of their own at the
+/// end of the buffer.
+#[inline]
+pub(crate) fn dense_sgemv_blocks(out: &mut [f32], w: &[f32], m: usize, n: usize, x: &[f32]) {
+    for v in out.iter_mut() {
+        *v = 0.0;
+    }
+    let groups = n / 8;
+    for g in 0..groups {
+        let block = g * 8 * m;
+        let mut acc = [0.0f32; 8];
+        for (j, &xj) in x[..m].iter().enumerate() {
+            for lane in 0..8 {
+                acc[lane] += w[block + j * 8 + lane] * xj;
+            }
+        }
+        out[g * 8..g * 8 + 8].copy_from_slice(&acc);
+    }
+    for o in groups * 8..n {
+        let block = groups * 8 * m + (o - groups * 8) * m;
+        for (j, &xj) in x[..m].iter().enumerate() {
+            out[o] += w[block + j] * xj;
+        }
+    }
+}
+
 /// `xcorr[i] = Σ_{j<n} x[j]·y[i+j]` for `i in 0..max_pitch`.
 ///
 /// Definition: **each lag sums strictly in `j` order**. Four lags are run side by side
