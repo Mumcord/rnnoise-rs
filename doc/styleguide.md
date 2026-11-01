@@ -168,6 +168,11 @@ Adopted despite the `[chrome]` tag, because they fit a real-time audio crate:
   `std::thread::spawn`),
 - no `panic::catch_unwind`,
 - nothing runs before `main()` — lazy statics initialise on first use, not at load time.
+  The frame path additionally resolves its lazy state at construction (`new_with_model`),
+  so nothing first-use-lazy is reachable from `process_frame`.
+- nothing on the per-frame path allocates, locks, does I/O, logs, or probes CPU features
+  outside the dispatch layer — `make rt-gate` (`scripts/realtime_gate.py`) plus
+  `tests/real_time_no_alloc.rs`. See [realtime.md](realtime.md).
 
 ---
 

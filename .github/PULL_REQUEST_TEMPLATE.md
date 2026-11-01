@@ -9,7 +9,7 @@ Links to issues where relevant.
 
 ## Gate
 
-- [ ] `make check` (fmt + clippy + test + cargo-deny) is green
+- [ ] `make check` (fmt + clippy + style + spell + test + deny + `rt-gate`) is green
 - [ ] `cargo test --release` — the parity harness is unchanged, byte for byte
 - [ ] `cargo test --test c_reference_parity` — the goldens still match the pinned C
       oracle build on CI hardware
