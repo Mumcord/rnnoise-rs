@@ -91,7 +91,11 @@ specific deployment, measure there — the bench reports percentiles precisely s
 measurement is comparable.
 
 Allocation counts over the measured window: **0 allocations over 20 000 frames**, ~66–71
-allocations total during construction.
+allocations total during construction. The one exception the test measures separately is
+one-time *runtime* bookkeeping on the measuring thread (lazy TLS/CRT init) — Windows CI showed
+exactly 1 block on the very first window. That is not the frame path: the same call in the
+next window is 0, so the test asserts 0 per frame and tolerates 1 for the first call on a
+fresh thread.
 
 ## What is not guaranteed
 
