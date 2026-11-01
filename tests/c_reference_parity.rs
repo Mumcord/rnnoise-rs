@@ -22,6 +22,10 @@
 //! Measured with the recipe in `scripts/c_reference.sh`: 0 differing samples for the port on
 //! all four clips, 0 between the goldens and a fresh gcc build, and 4 samples (1 LSB) against
 //! the historical clang golden on the speech clip.
+#![cfg(any(feature = "embedded-model", feature = "embedded-model-int8"))]
+// These tests need a model; with `default-features = false` there is no default one, so
+// they compile out rather than failing. The real-time gate itself still runs in the
+// all-features job.
 
 use std::path::{Path, PathBuf};
 
