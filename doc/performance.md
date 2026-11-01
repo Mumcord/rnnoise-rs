@@ -156,7 +156,27 @@ story for x86.
 
 Tier v4 is available on Rust ≥ 1.89 (AVX-512 intrinsics + `avx512f` target feature),
 which is why the crate's `rust-version` is 1.89. It does not force AVX-512 codegen:
-a binary built with 1.89+ runs tier v3 on an AVX2-only CPU and v4 on a Zen 4.
+a binary built with 1.89+ runs tier v3 on an AVX2-only CPU and v4 on a Zen 4. `select`
+checks `avx512f` + `avx512bw` + `avx512vnni`, because the kernel's `set1_epi8`/`add_epi8`
+are AVX512BW instructions, and `/proc/cpuinfo` names the VNNI flag `avx512_vnni` — which the
+CI coverage step now prints, since a skipped tier is not coverage.
+
+**On an actual Zen 4 core (Ryzen 7 7800X3D) tier v4 measures slower than tier v3**, so the
+ladder's top-down order is not a good assumption on every ISA. Same binary, same machine, one
+run each, int8 path only:
+
+| int8 | neural net | full frame |
+|---|--:|--:|
+| tier v4 (`vpdpbusd`), what `select` picks here | 114.9 µs | 135.9 µs |
+| tier v3 (AVX2), AVX-512 branch disabled in `select::dense_q8` | **77.5 µs** | **98.5 µs** |
+
+The cost is the bias instruction: `vpdpbusd` is unsigned × signed, so the kernel pays one
+`vpaddb` per chunk, and Zen 4 double-pumps 512-bit µops, so the tier lands on AVX2's
+per-cycle MAC rate with extra µops on top. ARM is not in this comparison because `sdot` is
+signed × signed and needs no bias at all. Options (unmeasured): move the `+128` into the
+stored weight domain, or precompute the per-row `128 · Σ w` correction at quantize time so the
+hot loop is load + `vpdpbusd` only, or gate the ladder per ISA on measured rates. Tracked as
+issue #16.
 
 Every int8 tier produces the **same exact integer** (products and pair sums fit in `i32`
 for the model's widths), so the quantized output is unchanged — the accuracy test
@@ -237,6 +257,12 @@ mul and one add per group of eight — one µop per eight MACs, which is the 256
 ceiling of this core. FMA cannot beat that; it only shortens the row-major kernels' op count.
 End to end, six alternating rounds pinned to one core, min of runs: float full frame **159.1
 µs** (committed tiers) vs **160.5 µs** (explicit FMA) — no measurable gain.
+
+Cross-check on a Zen 4 core (Ryzen 7 7800X3D), where a fused op is one 512-bit µop: default
+codegen vs `-C target-cpu=znver4`, two runs each, float full frame **138.7 / 138.8 µs** vs
+**138.2 / 138.6 µs** — no gain there either. Read that as the codegen *around* the tiers,
+since `-C target-cpu` cannot change the hand-written kernels (they use explicit mul and add by
+design); the tier itself is what was measured on Zen 3 above.
 
 **And it costs the parity guarantee.** A fused step does not round the product before the
 add, so the tier cannot be bit-identical to the portable reference: at most 1 ULP per step,

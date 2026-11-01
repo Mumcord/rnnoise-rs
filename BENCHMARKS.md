@@ -160,8 +160,25 @@ legacy 40.2 → 37.8 µs. Still exact int32, so output is unchanged.
 `vpdpbusd` (AVX-VNNI / AVX-512-VNNI, 64 MACs per instruction on Zen 4+ / Ice
 Lake+) is now tier v4 of the int8 ladder: it is unsigned × signed, so it needs a biased
 weight domain plus a `128 · Σ q_x` correction (`simd/x86_64/vnni.rs`, asserted exact by
-`simd/tests.rs`), and it is only *used* when CPUID reports `avx512f` + `avx512vnni` — which
-is why `rust-version` is 1.89. Not measurable on the Zen 3 box used here.
+`simd/tests.rs`), and it is only *used* when CPUID reports `avx512f` + `avx512bw` +
+`avx512vnni` (`set1_epi8`/`add_epi8` are AVX512BW) — which is why `rust-version` is 1.89.
+
+**Measured on a Zen 4 core (Ryzen 7 7800X3D), the tier is slower, not faster.** Same
+binary, same machine, one run each, tier selected by runtime detection:
+
+| int8 path | neural net | full frame |
+|---|--:|--:|
+| tier v4 (`vpdpbusd`), what `select` picks on this CPU | 114.9 µs | 135.9 µs |
+| tier v3 (AVX2), with the AVX-512 branch in `select::dense_q8` disabled | **77.5 µs** | **98.5 µs** |
+
+So the 2–4× estimate above was wrong as written: on this core tier v4 costs **1.48×**
+relative to tier v3. The reason is the bias — `vpdpbusd` is unsigned × signed, so every
+chunk pays a `vpaddb` on top, and Zen 4 double-pumps 512-bit µops, which puts the tier at
+the same per-cycle MAC rate as AVX2 plus the extra µops. ARM is unaffected: `sdot` is
+signed × signed and needs no bias. Two ways out, neither measured yet: precompute the biased
+weight domain (or the per-row `128 · Σ w` correction) at quantize time so the hot loop is
+load + `vpdpbusd` only, or gate the ladder on the measured rate per ISA instead of assuming
+top-down is better. Tracked in issue #16.
 
 ### 3. f16 weights + f16 SIMD — *medium win (future)*
 
