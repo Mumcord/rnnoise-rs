@@ -44,3 +44,23 @@ harness = false
 opt-level = 3
 lto = true
 codegen-units = 1
+
+# Style gates from doc/styleguide.md. `pedantic` is deliberately not enabled as a
+# whole (rule C9: the DSP casts and the deliberately-near f32 constants are the
+# arithmetic); the guide-mapped lints are enabled individually.
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "deny"
+unstable_features = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+panic = "deny"
+must_use_candidate = "deny"
+exhaustive_enums = "deny"
+exhaustive_structs = "deny"
+wildcard_imports = "deny"
+disallowed_methods = "deny"
+# Module names mirror upstream C files (rule C2), so `simd::scalar` etc. are fine.
+module_name_repetitions = "allow"

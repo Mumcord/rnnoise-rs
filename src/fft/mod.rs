@@ -12,14 +12,19 @@
 //! `j` order) and vector tiers that keep the same per-element expression order, so
 //! they produce identical bits. Tier selection is runtime, not build time.
 
+#[allow(unsafe_code)] // unsafe island: the runtime-detected tier boundary
 mod dispatch;
 mod kiss_fft;
 mod scalar;
 mod spectrum;
 
+// Style gate (doc/styleguide.md): unsafe island + the guide's glob exception for
+// `core::arch` intrinsics.
+#[allow(unsafe_code, clippy::wildcard_imports)]
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
 
+#[allow(unsafe_code, clippy::wildcard_imports)] // unsafe island: tests call the tiers directly
 #[cfg(test)]
 mod tests;
 

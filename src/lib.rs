@@ -27,10 +27,12 @@ mod fft;
 mod nnet;
 mod params;
 mod pitch;
+#[allow(unsafe_code)] // unsafe island: core::arch intrinsics are unsafe functions
 mod simd;
 mod weights;
 
 #[cfg(feature = "capi")]
+#[allow(unsafe_code)] // unsafe island: pointers cross the FFI boundary
 pub mod capi;
 
 /// The original (2018) RNNoise model — smaller and faster, lower quality.

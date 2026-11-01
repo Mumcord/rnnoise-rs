@@ -2,3 +2,9 @@ edition = "2021"
 max_width = 100
 use_field_init_shorthand = true
 use_try_shorthand = true
+
+# Google Rust style guide, "Configuration (for style guide authors)".
+hex_literal_case = "Lower"
+# `format_macro_matchers` and `imports_granularity = "Module"` are nightly-only in
+# rustfmt, so the repo stays on stable and `make style` checks the one-module-per
+# `use` rule instead (doc/styleguide.md).
