@@ -181,7 +181,8 @@ is explicitly allowed by the guide.
 
 ## What is enforced by a lint, and what is not
 
-Everything below is a lint level, so `make check` is the whole gate:
+Everything below is a lint level, so `make check` is the whole gate (its
+`cargo-deny` step checks the dependency graph and `cspell` the vocabulary, not style):
 
 | Rule | Lint |
 |---|---|
@@ -201,10 +202,12 @@ Everything below is a lint level, so `make check` is the whole gate:
 | `new()` paired with `Default` | `clippy::new_without_default` |
 | Formatting | `rustfmt` (`max_width = 100`, `hex_literal_case = Lower`) |
 
-These are **review rules** — no lint can express them, so they are checked by a
-human and nothing else:
+These are **review rules** — no lint can express them. `make style`
+(`scripts/style.sh`) checks the mechanically checkable ones and fails the gate; the
+rest still needs a human:
 
-- the `SAFETY:` justification per unsafe block or file,
+- the `SAFETY:` justification per unsafe block or file (`make style` checks that every
+  file with unsafe code is in an island and carries one),
 - module-root purity (`lib.rs`/`mod.rs` declare and re-export only),
 - one module per `use` block (`imports_granularity` is nightly-only),
 - `#[rustfmt::skip]` only for manual alignment or generated code,
@@ -218,7 +221,7 @@ keeping rules that "pull their weight".
 
 ## Review checklist
 
-1. `make check` green (fmt + clippy + test).
+1. `make check` green (fmt + clippy + test + cargo-deny).
 2. `tests/parity.rs` byte-identical before and after — a style change that moves
    a bit is not a style change.
 3. Style commits and behaviour commits do not mix.
