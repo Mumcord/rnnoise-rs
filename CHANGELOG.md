@@ -71,6 +71,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `to_bytes`/`from_bytes` can be asserted as equality rather than as a comment.
 - `rnnoise_create` with a NULL `model` returns NULL when no model is embedded, instead of
   assuming one exists.
+- Test files and benches that need a model compile out when no blob is embedded
+  (`tests/api.rs`, `tests/real_time_no_alloc.rs`, `tests/real_time_denormals.rs`,
+  `src/simd/coverage.rs`, `real_time_distribution`). `tests/c_reference_parity.rs` is gated to
+  `embedded-model` specifically, not to "any embedded model": the committed goldens are the
+  **float** model's output, and `embedded-model-int8` is a different, deliberately non-bit-exact
+  model (rel energy `4.8e-6`, up to 13 LSB on the speech clip) — checking it against those goldens
+  would assert a property the int8 path never claimed. Its gate stays `quantized_accuracy`
+  (`rel < 5e-3`).
 - `rnnoise-demo` and the `process` bench now declare
   `required-features = ["embedded-model"]` (they need a model they are not handed).
 

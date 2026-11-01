@@ -840,6 +840,7 @@
         "maxd",
         "maxfactors",
         "maxperiod",
+        "memcpy",
         "memmap",
         "memmap2",
         "memset",
