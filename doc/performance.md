@@ -5,10 +5,16 @@ it, and how to reproduce the numbers. For the full benchmark tables and
 methodology see [`BENCHMARKS.md`](../BENCHMARKS.md).
 
 All figures are Apple M4 Pro, single core, `opt-level=3, lto=true,
-codegen-units=1`, except the x86-64 row, which is an AMD Ryzen 9 5900X (Zen 3)
+codegen-units=1`, except the x86-64 rows, which are an AMD Ryzen 9 5900X (Zen 3)
 with plain `cargo bench` — i.e. the default `x86-64` (SSE2) codegen baseline plus
 runtime feature detection, no `-C target-cpu`. Per-frame is the steady-state cost of one `process_frame`;
 "real time" is how many times faster than the 10 ms a frame represents.
+
+The Zen 3 figures are a head-to-head against the pre-SIMD baseline commit
+[`74b46b1`](https://github.com/lovelace-labs/rnnoise-rs/commit/74b46b1065630f68464ee60dd542e3ce175743db):
+same harness file, same deterministic bench frame, same toolchain (rustc 1.99.1),
+one core pinned, the two builds run alternating in the same session, means of four
+rounds. Run-to-run spread is ~5 %, so read these as ratios.
 
 ## Summary
 
@@ -16,9 +22,10 @@ runtime feature detection, no `-C target-cpu`. Per-frame is the steady-state cos
 |---|--:|--:|---|
 | current model, float (default) | ~312 µs | ~32× | bit-exact with C, zero deps |
 | current model, int8 + `sdot` (aarch64) | ~105 µs | ~95× | opt-in, audibly identical |
-| current model, int8 + `pmaddwd` (x86-64, Zen 3) | ~103 µs | ~97× | runtime-detected AVX2; 4.3× vs the old scalar path |
-| current model, float, x86-64 Zen 3 | ~210 µs | ~47× | see the x86-64 section below |
-| legacy model (`legacy-model`) | ~26 µs | ~309× | **faster than `nnnoiseless`** |
+| current model, int8 + `pmaddwd` (x86-64, Zen 3) | ~104 µs | ~96× | runtime-detected AVX2; **4.9× vs the baseline** (which had no x86 int8 kernel at all) |
+| current model, float, x86-64 Zen 3 | ~205 µs | ~49× | **1.49×** vs the baseline; see the x86-64 section below |
+| legacy model (`legacy-model`), M4 Pro | ~26 µs | ~309× | **faster than `nnnoiseless`** |
+| legacy model, x86-64 Zen 3 | ~33 µs | ~299× | **1.21×** vs the baseline |
 | — `nnnoiseless` (same old model) | ~28 µs | ~290× | for reference |
 
 The current model is ~13× larger than the old one, so it cannot match the tiny
@@ -71,9 +78,11 @@ a scalar fallback that yields the identical integer result.
 
 The int8 tiers only help the quantized model, so the float path used to run at the
 plain `x86-64` (SSE2, 4-lane) codegen rate even on an AVX2 machine. `src/simd` now has
-float tiers for the three hot DSP/DNN loops, each of them **bit-identical to the
-portable reference** because it keeps the reference's accumulation order and never
-fuses a multiply with an add:
+float tiers for the three hot DSP/DNN loops, each of them **bit-identical to the portable
+reference** because it keeps the reference's accumulation order and never fuses a multiply
+with an add (no `vfmadd` appears in the disassembly). *Bit-identical to the reference as it
+stands today*: the sparse 8×4 commit also re-grouped the reference itself, which moves a
+couple of 1-LSB roundings relative to the baseline — see the head-to-head section below.
 
 | kernel | what the tier does | measured on a Zen 3 core |
 |---|---|--|
@@ -100,6 +109,10 @@ End to end, plain `cargo bench`, tier v3 selected at runtime (best of runs):
 | — float front-end | 31.6 µs | **21.8 µs** |
 | int8 full frame | 116.8 µs | **102–107 µs** (94–98× real time) |
 | legacy full frame | 38.1 µs | **33.8 µs** |
+
+Cross-check, same machine, four alternating rounds against the baseline commit (means,
+not best of runs): float `305.2 → 205.2 µs`, front-end `31.4 → 21.7 µs` — see
+[Head-to-head](#head-to-head-against-the-pre-simd-baseline-74b46b1).
 
 Parity is unchanged by all of this (`3 / 47 520 samples, 1 LSB`, `2.003e-10`), which is
 the point of keeping the accumulation order: the tiers are a layout and width change, not
@@ -136,6 +149,11 @@ End to end, plain `cargo bench`, tier v3 selected at runtime:
 | int8 full frame | 519 µs | **119 µs** (84× real time) |
 | legacy full frame | 40.2 µs | 38.1 µs |
 
+Cross-check, same machine, four alternating rounds against the baseline commit (means):
+int8 `509.5 → 104.3 µs` full frame, `477.9 → 82.6 µs` neural net, legacy `40.4 → 33.4 µs`.
+At the baseline int8 was *slower* than float (0.58×), so the ladder is the whole
+story for x86.
+
 Tier v4 is available on Rust ≥ 1.89 (AVX-512 intrinsics + `avx512f` target feature),
 which is why the crate's `rust-version` is 1.89. It does not force AVX-512 codegen:
 a binary built with 1.89+ runs tier v3 on an AVX2-only CPU and v4 on a Zen 4.
@@ -147,12 +165,60 @@ for every tier the CPU reports, skipping the others. The VNNI bias identity
 (`Σ(w+128)·x − 128·Σx == Σ w·x`) is also unit-tested in pure Rust, so it is checked
 even on runners without AVX-512.
 
+## Head-to-head against the pre-SIMD baseline (`74b46b1`)
+
+Means of four alternating rounds on the pinned Zen 3 core, both builds from the same
+toolchain and profile:
+
+| path | metric | `74b46b1` | HEAD (`4a26f93`) | speedup | real-time |
+|---|--:|--:|--:|--:|--:|
+| float | full frame | 305.2 µs | **205.2 µs** | **1.49×** | 32.8× → 48.7× |
+| | front-end | 31.4 | 21.7 | 1.45× | 318× → 461× |
+| | neural net | 273.7 | 183.4 | 1.49× | |
+| int8 | full frame | 509.5 µs | **104.3 µs** | **4.88×** | 19.6× → 95.9× |
+| | front-end | 31.6 | 21.7 | 1.46× | |
+| | neural net | 477.9 | 82.6 | **5.79×** | 20.9× → 121× |
+| legacy | full frame | 40.4 µs | **33.4 µs** | 1.21× | 248× → 299× |
+| | neural net | 21.7 | 16.3 | 1.33× | |
+| | front-end | 18.7 | 17.0 | 1.10× | |
+
+At the baseline the int8 path was *slower* than float (0.58×) because x86 had no
+byte dot kernel; on the branch int8 is 2.0× faster than float. End to end
+(`rnnoise-demo`, 100 s of `test_data/testing.raw` tiled, min of 5 runs each):
+**3.042 s → 2.001 s (1.52×)**, i.e. 301 → 198 µs/frame; the ~5 ms start-up is unchanged.
+
+Per commit (same protocol, two rounds each — approximate, ±5 %):
+
+| commit | float full | float front | float NN | int8 full | what moved |
+|---|--:|--:|--:|--:|---|
+| `74b46b1` | 305 | 31.4 | 274 | 509 | baseline |
+| `b966e6d` | 305 | 31.5 | 274 | 115 | int8 tier ladder |
+| `7014a44` | 264 | 30.2 | 234 | 115 | float dense + xcorr tiers |
+| `389047e` | 221 | 30.0 | 191 | 113 | dense-form loading of complete sparse indices |
+| `d9d1cbc` | 199 | 21.8 | 177 | 101 | FFT butterfly tier |
+| `a3e09ea` | 201 | 21.6 | 180 | 103 | precomputed band weights (~1 µs) |
+| `4a26f93` | 202 | 21.7 | 181 | 103 | docs |
+
+The two builds are not byte-identical to each other, and it is worth stating why: 2 of
+47 520 samples differ by 1 LSB (363 over the 100 s run, because the state carries
+forward). The first divergence in a numeric bisect is the sparse 8×4 commit
+(`ae79ade`, re-landed as `b966e6d`) — it re-grouped the accumulation from a four-term
+chain (`w[r]·x0 + w[8+r]·x1 + …` summed in one expression) to one product per column
+accumulated across the row group, which is the order upstream `vec.h` uses. So the tier is
+bit-identical to the current portable reference (`src/simd/tests.rs` asserts that for every
+tier the CPU reports), while the reference's own grouping changed against the baseline.
+The parity harness reports the same numbers on both builds
+(`samples=47520 nonzero_diff=3 max_diff=1 rel_energy=2.003e-10`), so nothing regressed.
+
 ## Choosing a configuration
 
-- **Default (float):** highest quality, bit-exact, zero deps, ~32× real time —
+- **Default (float):** highest quality, bit-exact with the C reference up to a handful of
+  1-LSB roundings, zero deps, ~32× real time on M4 Pro (~49× on the Zen 3 core) —
   fine for real-time on one core with lots of headroom.
-- **int8 (`.quantized()`):** ~3× faster and ~4× smaller, imperceptible quality
-  loss — use it for many concurrent streams, embedded, or battery-sensitive cases.
+- **int8 (`.quantized()`):** ~3× faster than float on aarch64, ~4.9× faster than the
+  pre-SIMD x86 baseline (~2.0× faster than float on this Zen 3 core), ~4× smaller,
+  imperceptible quality loss — use it for many concurrent streams, embedded, or
+  battery-sensitive cases.
 - **legacy (`legacy-model`):** smallest/fastest, lower quality — use only when you
   specifically want the old model's profile.
 
@@ -162,6 +228,14 @@ even on runners without AVX-512.
 # current model: float + int8 breakdown (and legacy if the feature is on)
 cargo bench --bench process
 cargo bench --features legacy-model --bench process
+
+# head-to-head against the pre-SIMD baseline: build the baseline in a separate
+# checkout and run both alternately, pinned to one core
+mkdir -p /tmp/baseline && git archive 74b46b1 | tar -x -C /tmp/baseline
+cargo bench --bench process                       # HEAD
+cd /tmp/baseline && cargo bench --bench process   # baseline
+# run them alternately on the same core to keep thermal conditions equal:
+#   taskset -c 2 cargo bench --bench process
 
 # fair, isolated legacy vs nnnoiseless comparison
 cargo run --release --features legacy-model --example bench_legacy
