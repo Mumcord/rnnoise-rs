@@ -69,6 +69,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   portable reference (`simd/tests.rs`, `fft/tests.rs`, `common/tests`, and
   `weights/tests` for the dense-equivalence of a complete ascending index).
 
+### Fixed
+
+- `simd::x86_64::vnni::dense_q8` subtracted the `128 · Σ q_x` correction over the whole
+  activation vector instead of over the length a row covers (`min(m, qx.len())`), so tier v4
+  disagreed with the portable reference for any layer narrower than `qx` — the CI failure on
+  AVX-512 runners through the tail-width assertion in `simd/tests.rs` (widths 7, 33, 65).
+  Exact for every width again; the loads are bounded by the shorter of the two slices (as
+  the reference's `zip` is), and the bias identity is asserted per row length so it is
+  checkable without AVX-512 hardware.
+
 ### Performance
 
 - x86-64 gets real int8 dot kernels, one per ISA tier (`SSE2` sign-mask +

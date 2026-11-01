@@ -86,22 +86,33 @@ fn vnni_bias_identity_is_exact() {
     // subtracts `128 · Σ x`. This is the whole correctness argument for the tier,
     // and it is checkable without an AVX-512 CPU (CI runners usually have none).
     let (w, qx, _) = fixture();
-    let plain: i32 = w.iter().zip(&qx).map(|(&a, &b)| a as i32 * b as i32).sum();
-    let biased: i32 = w
-        .iter()
-        .zip(&qx)
-        .map(|(&a, &b)| (a as i32 + 128) * b as i32)
-        .sum();
-    let sum_x: i32 = qx.iter().map(|&v| v as i32).sum();
-    assert_eq!(
-        biased - 128 * sum_x,
-        plain,
-        "tier v4 bias correction is not exact"
-    );
-    assert!(
-        biased.abs() <= 384 * 255 * 127,
-        "i32 accumulator would overflow"
-    );
+    // The bias is per row, over the length the row covers — `min(m, qx.len())`, not the
+    // whole activation vector. Rows narrower than `qx` are what an AVX-512 CI runner sees
+    // through the tail-width assertion in `every_x86_tier_matches_scalar`; they are
+    // checkable here, on any machine.
+    for row_len in [7usize, 33, 65, M] {
+        let row = &w[..row_len];
+        let plain: i32 = row
+            .iter()
+            .zip(&qx)
+            .map(|(&a, &b)| a as i32 * b as i32)
+            .sum();
+        let biased: i32 = row
+            .iter()
+            .zip(&qx)
+            .map(|(&a, &b)| (a as i32 + 128) * b as i32)
+            .sum();
+        let sum_x: i32 = qx.iter().take(row_len).map(|&v| v as i32).sum();
+        assert_eq!(
+            biased - 128 * sum_x,
+            plain,
+            "tier v4 bias correction is not exact at row length {row_len}"
+        );
+        assert!(
+            biased.abs() <= 384 * 255 * 127,
+            "i32 accumulator would overflow"
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]

@@ -3,7 +3,8 @@
 //! multiply-accumulate in hardware.
 //!
 //! `vpdpbusd` is **unsigned × signed**, so the weights are biased by +128 in
-//! register and the constant `128 · Σ q_x` is subtracted per output. Products are
+//! register and the constant `128 · Σ q_x` — over exactly the length a row covers —
+//! is subtracted per output. Products are
 //! at most `255 · 127` and the row sum at most `384 · 32385 ≈ 1.2e7`, still exact
 //! in `i32`, so the result equals the scalar reference exactly.
 //!
@@ -16,13 +17,16 @@ use core::arch::x86_64::*;
 #[target_feature(enable = "avx512f")]
 #[target_feature(enable = "avx512vnni")]
 // SAFETY: requires AVX-512F + AVX-512 VNNI; `select` only calls this after both
-// runtime detections. Unaligned 64-byte loads, equal-length slices; `vpdpbusd` is
-// unsigned x signed, which is why the caller passes the `128 * sum(x)` correction.
+// runtime detections. Unaligned 64-byte loads over `min(w.len(), x.len())` bytes, which
+// is the length the reference zips to, so no load reads past either slice; `vpdpbusd` is
+// unsigned x signed, which is why the caller passes the `128 * sum(x)` correction for
+// exactly that length.
 unsafe fn dot_biased(w: &[i8], x: &[i8], bias: i32) -> i32 {
     let mut acc = _mm512_setzero_si512();
     // +128 as bytes: 0x80. `vpaddb` is modular, so this is the unsigned bias.
     let sign = _mm512_set1_epi8(-128);
-    let chunks = w.len() / 64;
+    let len = w.len().min(x.len());
+    let chunks = len / 64;
     for k in 0..chunks {
         let a = _mm512_add_epi8(
             _mm512_loadu_si512(w.as_ptr().add(k * 64) as *const __m512i),
@@ -32,7 +36,7 @@ unsafe fn dot_biased(w: &[i8], x: &[i8], bias: i32) -> i32 {
         acc = _mm512_dpbusd_epi32(acc, a, b);
     }
     let mut sum = _mm512_reduce_add_epi32(acc) - bias;
-    for k in chunks * 64..w.len() {
+    for k in chunks * 64..len {
         sum += (w[k] as i32 + 128) * x[k] as i32;
     }
     sum
@@ -48,9 +52,14 @@ pub(crate) unsafe fn dense_q8(
     n: usize,
     qx: &[i8],
 ) {
-    // `128 * Σ q_x` is the same for every output, so it is computed once per layer.
+    // `128 * Σ q_x` is the same for every output of this layer, so it is computed once —
+    // but over the elements a row actually covers, `min(m, qx.len())`, not over the whole
+    // activation vector. A layer narrower than `qx` (the tail widths in `simd/tests.rs`, and
+    // any layer whose input is shorter than the quantised activation buffer) has to subtract
+    // the narrower bias, otherwise the tier returns `reference - 128 * Σ q_x[m..]`.
+    let covered = m.min(qx.len());
     let mut sx = 0i32;
-    for &v in qx {
+    for &v in &qx[..covered] {
         sx += v as i32;
     }
     let bias = 128 * sx;
