@@ -198,8 +198,60 @@ selected at runtime):
 
 Without a fused multiply-add the ceiling is 8 MACs/cycle (one 32-byte weight load plus one
 mul and one add per group of eight). The row-major shape reaches ~5.1, the block shape ~6.7,
-so the float GEMV is now within about 20% of what this core can do; the remaining step is
-FMA, which changes the rounding and is therefore not allowed by the parity bound.
+so the float GEMV is now within about 20% of what this core can do; the only remaining step
+is FMA, which changes the rounding per step and is therefore not allowed by the parity
+bound — and, measured below, is not worth taking.
+
+### FMA and SSE4.1 on x86-64: measured, and not shipped
+
+[Issue #1](https://github.com/Mumcord/rnnoise-rs/issues/1) asked for hand-written SSE4.1 and
+AVX2 + FMA float kernels with runtime detection and a target of "at least 3× faster than
+today's x86 float path". Runtime detection and the
+AVX2 float tiers are done (above); the rest was measured on this core and closed without
+shipping code, for three reasons.
+
+**The 3× target is not reachable, and the issue's own measurement says so.** The float GEMV
+is instruction-throughput bound, not cache bound: with an L1-resident matrix the plain tier
+does 4.0 MACs/cycle, the best 4-chain FMA build 6.4–7.6 → **1.6–1.9×**, not 3×. Separately,
+the frame streams 11.3 MB of float weights at ~45 GB/s, i.e. the per-core L3 ceiling, so 3×
+would need weight reuse across streams (batch: measured 1.19× on one core, it pays only when
+several cores are bandwidth-bound) or fewer bytes per MAC (int8 — already; int4 — at a
+quality cost). So the criterion is closed at ~1.6–1.9× of the *pre-tier* baseline.
+
+**On top of the committed tiers, FMA buys ≤1.2× on the row-major shapes and nothing on the
+block shapes.** Explicit `#[target_feature(enable = "avx2", enable = "fma")]` kernels, same
+shapes and same accumulation order, tight per-kernel loops (200 warm-up + 2000 iterations,
+the fixture used by `simd/tests.rs`):
+
+| shape | committed AVX2 tier | explicit FMA | ratio |
+|---|--:|--:|--:|
+| 384×1152 row-major | 43.98 µs | 35.93 µs | **1.22×** |
+| 384×1152 block-major | 15.99 | 16.08 | 1.00 (noise) |
+| 384×384 row-major | 13.01 | 11.58 | 1.12× |
+| 384×384 block-major | 4.85 | 4.90 | ~1.00 |
+| 1536×32 row-major | 5.64 | 4.88 | 1.16× |
+| 1536×32 block-major | 1.34 | 1.33 | ~1.00 |
+
+The block-major shape is where the model's GRUs run, and it already issues one load plus one
+mul and one add per group of eight — one µop per eight MACs, which is the 256-bit FP issue
+ceiling of this core. FMA cannot beat that; it only shortens the row-major kernels' op count.
+End to end, six alternating rounds pinned to one core, min of runs: float full frame **159.1
+µs** (committed tiers) vs **160.5 µs** (explicit FMA) — no measurable gain.
+
+**And it costs the parity guarantee.** A fused step does not round the product before the
+add, so the tier cannot be bit-identical to the portable reference: at most 1 ULP per step,
+which on a cancellation-heavy depth-384 synthetic sum measures as ~1000 ULP per element
+(~1e-5 absolute, ~1 LSB on the output samples). It stays inside the parity bound
+(`tests/parity.rs` gives the same numbers with an FMA build), but it weakens the crate's
+headline claim. An FMA tier therefore has to be opt-in, and here it would be an opt-in
+feature for ≤1.2× on the row-major shapes only — not worth a second float ladder. If a core
+clears the ~1.5× bar in the future, it goes in as an optional `fma` Cargo feature,
+runtime-detected like every other tier.
+
+**SSE4.1 is not a float tier at all.** What SSE4.1 adds to these loops is the int8
+`pmovsxbw` widen (int8 tier v2, already shipped). For `f32` it is the same 4-lane width as
+SSE2 — a hand-written SSE4.1 float kernel would be the SSE2 kernel under a different name.
+The float ladder stays SSE2 + AVX2.
 
 ## Head-to-head against the pre-SIMD baseline (`74b46b1`)
 

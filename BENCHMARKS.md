@@ -148,7 +148,7 @@ opt-in; the float model stays the default. (A naive dequant-to-f32 int8 loop, by
 contrast, measured *0.81×* — slower — confirming the win is the instruction-count
 reduction, not bandwidth.)
 
-### 2. x86 int8 SIMD — ✅ *implemented (AVX2), VNNI pending*
+### 2. x86 int8 SIMD — ✅ *implemented (SSE2 → SSE4.1 → AVX2 → VNNI, runtime-detected)*
 
 `src/simd/` dispatches per architecture. On x86-64 the kernel is
 `pmovsxbw` + `pmaddwd` (runtime AVX2 detection); before that the int8 path had no
@@ -158,10 +158,10 @@ int8 net 487 → **88 µs** (5.6×), full frame 519 → **120 µs** (84× real t
 legacy 40.2 → 37.8 µs. Still exact int32, so output is unchanged.
 
 `vpdpbusd` (AVX-VNNI / AVX-512-VNNI, 64 MACs per instruction on Zen 4+ / Ice
-Lake+) is the remaining step: it is unsigned × signed, so it needs a biased weight
-domain plus a `128 · Σ q_x` correction (and the 512-bit `core::arch` types postdate
-the crate's `rust-version`). Estimated another 2–4× on such CPUs; not measurable on
-the Zen 3 box used here.
+Lake+) is now tier v4 of the int8 ladder: it is unsigned × signed, so it needs a biased
+weight domain plus a `128 · Σ q_x` correction (`simd/x86_64/vnni.rs`, asserted exact by
+`simd/tests.rs`), and it is only *used* when CPUID reports `avx512f` + `avx512vnni` — which
+is why `rust-version` is 1.89. Not measurable on the Zen 3 box used here.
 
 ### 3. f16 weights + f16 SIMD — *medium win (future)*
 
@@ -191,9 +191,15 @@ custom one) trades some quality for speed and footprint.
 
 ### Recommended priority
 
-int8 + `sdot` (#1) is done and is the big lever on ARM. Next: VNNI for x86 (#2),
-then the real-input FFT (#5) for a broad front-end win; f16 (#3) and threading
-(#4) as needed.
+int8 + `sdot` (#1) is done and is the big lever on ARM; the x86 int8 ladder (#2) is
+done too, per ISA tier, runtime-detected. The x86 **float** path (issue
+[#1](https://github.com/Mumcord/rnnoise-rs/issues/1)) is at its throughput ceiling: the
+tiers landed, the "3×" acceptance criterion was measured to be unreachable (1.6–1.9× of the
+pre-tier baseline; ≤1.2× for the FMA variant on top of the committed block-major tier), and
+an SSE4.1 float tier would be the SSE2 kernel with a different name — see
+[doc/performance.md](doc/performance.md#fma-and-sse41-on-x86-64-measured-and-not-shipped).
+Next: the real-input FFT (#5) for a broad front-end win; f16 (#3) and threading (#4) as
+needed.
 
 ## Reproduce
 
