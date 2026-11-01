@@ -17,6 +17,7 @@ const WEIGHT_TYPE_INT: i32 = 1;
 
 /// Errors returned while loading a model blob.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ModelError {
     /// The blob is truncated or otherwise structurally invalid.
     Malformed,
@@ -41,6 +42,7 @@ impl std::error::Error for ModelError {}
 /// A parsed RNNoise model: the immutable weights shared across denoiser
 /// instances. Construct with [`RnnModel::default`] for the built-in model, or
 /// [`RnnModel::from_bytes`] to load a custom one.
+#[derive(Clone, Debug)]
 pub struct RnnModel {
     pub(crate) conv1: LinearLayer,
     pub(crate) conv2: LinearLayer,
@@ -397,6 +399,7 @@ impl RnnModel {
     ///
     /// Mirrors upstream's choice to quantize only conv2 and the GRU matrices;
     /// conv1 and the output heads stay full precision.
+    #[must_use]
     pub fn quantized(mut self) -> RnnModel {
         for layer in [
             &mut self.conv2,

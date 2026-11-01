@@ -70,6 +70,7 @@ const MAX_GRU_3N: usize = 1152;
 /// opt-in int8 quantization. The int8 form is a **transposed, dense**
 /// `[output][input]` matrix with a per-output scale, which lets each output be a
 /// contiguous int8 dot product — ideal for the SIMD path in [`crate::simd`].
+#[derive(Clone, Debug)]
 pub(crate) enum Weights {
     Float(Vec<f32>),
     Q8 { w: Vec<i8>, scale: Vec<f32> },
@@ -90,6 +91,7 @@ pub(crate) enum DenseLayout {
 
 /// Generic (sparse) affine transform — port of `LinearLayer` + `compute_linear`.
 /// Always carries a bias for the RNNoise model.
+#[derive(Clone, Debug)]
 pub(crate) struct LinearLayer {
     pub bias: Vec<f32>,
     pub weights: Weights,
