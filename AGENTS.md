@@ -19,8 +19,11 @@ Idiomatic Rust port of Xiph RNNoise (current conv+GRU model) for real-time speec
    and validated against the parity harness — do not let parity regress.
 2. **No new heavy dependencies** without cause; prefer pure-Rust crates and
    keep optional features opt-in.
-3. **`#![forbid(unsafe_code)]`** stays where it is set; the crate aims to be
-   unsafe-free.
+3. **Unsafe code is confined to the declared islands** (`src/capi.rs`, `src/simd/`,
+   `src/fft/x86_64.rs`, `src/fft/dispatch.rs`, the SIMD/FFT test modules):
+   `unsafe_code = "deny"` at the crate root, `#[allow(unsafe_code)]` only on those
+   module declarations, and a `SAFETY:` justification per block or per file.
+   `make style` enforces both.
 4. **No silent breaking changes.** Public API changes need an entry in
    [CHANGELOG.md](CHANGELOG.md).
 
@@ -36,6 +39,10 @@ Acceptance criteria for any new or refactored code (binding):
    `lovelace-labs/*-rs` repos.
 4. **Test coverage** — functionality ships with tests; tests needing weights
    or large data must skip gracefully when the artifacts are absent.
+5. **Style** — the adopted ruleset is [doc/styleguide.md](doc/styleguide.md)
+   (adapted from the Google Rust style guide). Rules are either tool-enforced or
+   explicitly waived; if a rule is broken, the PR/commit cites the exemption by
+   number. `make style` checks what no lint can express.
 
 ## Build & test
 

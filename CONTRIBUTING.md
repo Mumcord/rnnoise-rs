@@ -72,11 +72,23 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
 
 ## Coding standards
 
+The full ruleset is [doc/styleguide.md](doc/styleguide.md), adapted from the
+[Google Rust style guide](https://google.github.io/styleguide/rustguide.html).
+The short version:
+
 - Run `cargo fmt` (enforced by CI).
-- All clippy warnings are errors (`-D warnings`).
-- Document public items with `///` comments.
-- Prefer `Result` over panics for recoverable errors.
-- `#![forbid(unsafe_code)]` where it is set — keep the crate unsafe-free.
+- All clippy warnings are errors (`-D warnings`); the lint set lives in
+  `Cargo.toml` under `[lints]`.
+- Document public items with `///` comments (`missing_docs` is denied).
+- Prefer `Result` over panics for recoverable errors; `Option` for obvious
+  failures; `panic!` only for violated invariants.
+- No `unwrap` in `src/` — pattern-match when the input proves the case, otherwise
+  `expect("context")`. Tests use `expect` with an assertion context string.
+- Unsafe only in the declared islands (`src/capi.rs`, `src/simd/`,
+  `src/fft/x86_64.rs`, `src/fft/dispatch.rs`), each with a `SAFETY:` justification.
+- No async, no threads, no `catch_unwind`, no unstable features, no `rustfmt::skip`
+  except manual alignment.
+- `make style` runs the checks that no lint can express and is part of `make check`.
 
 ## Module organization
 
