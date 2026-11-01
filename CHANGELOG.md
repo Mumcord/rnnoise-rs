@@ -28,7 +28,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The tier gate in CI now accepts both `/proc/cpuinfo` spellings for the AVX512BW flag
   (`avx512_bw` and `avx512bw`); a Zen 4 runner prints the second, so the coverage job
-  false-negativied on hardware that can actually exercise tier v4 (issue #16).
+  reported a false negative on hardware that can actually exercise tier v4 (issue #16).
 
 
 - **Style ruleset**: the adopted subset of the Google Rust style guide is now
