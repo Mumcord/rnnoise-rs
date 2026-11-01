@@ -68,6 +68,9 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
 3. Open a pull request with a clear title (Conventional Commits format) and
    a description of what changed and why. Link related issues.
 4. Address review feedback by pushing additional commits.
+5. Fill in the [pull request template](.github/PULL_REQUEST_TEMPLATE.md): the gate
+   checklist, and the exemption number from `doc/styleguide.md` for any rule you
+   knowingly break.
 5. Squash and merge after approval.
 
 ## Coding standards
