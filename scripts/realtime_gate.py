@@ -164,7 +164,7 @@ def main() -> int:
     files = [ROOT / rel for rel in FRAME_PATH_FILES if (ROOT / rel).is_file()]
 
     for path in files:
-        rel = str(path.relative_to(ROOT))
+        rel = path.relative_to(ROOT).as_posix()
         code = strip_comments(path.read_text(encoding="utf-8"))
         for rule, patterns in FORBIDDEN_IN_FILES.items():
             for pat in patterns:
