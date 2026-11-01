@@ -134,7 +134,7 @@ NN per frame).
 | v1 | SSE2 (x86-64 baseline) | `punpcklbw` + `cmpgt` sign mask + `pmaddwd` | 3.5 |
 | v2 | SSE4.1 (x86-64-v2) | `pmovsxbw` + `pmaddwd` | 6.5 |
 | v3 | AVX2 (x86-64-v3) | same shape, 16 lanes | **15.3** |
-| v4 | AVX-512 VNNI (x86-64-v4) | `vpdpbusd`, unsigned × signed → biased + corrected | ~30 (no VNNI CPU here) |
+| v4 | AVX-512 VNNI (x86-64-v4) | `vpdpbusd`, unsigned × signed; `+128` paid once per layer, per-row `128 · Σ w` correction | 27.3 on the Zen 4 core (17.1 before the shape change) |
 
 The same idea applies to the sparse 8×4 GEMV: `x86_64/sparse8x4.rs` keeps the
 eight-row accumulator in a ymm register for the whole row group instead of
@@ -158,31 +158,64 @@ Tier v4 is available on Rust ≥ 1.89 (AVX-512 intrinsics + `avx512f` target fea
 which is why the crate's `rust-version` is 1.89. It does not force AVX-512 codegen:
 a binary built with 1.89+ runs tier v3 on an AVX2-only CPU and v4 on a Zen 4. `select`
 checks `avx512f` + `avx512bw` + `avx512vnni`, because the kernel's `set1_epi8`/`add_epi8`
-are AVX512BW instructions, and `/proc/cpuinfo` names the VNNI flag `avx512_vnni` — which the
-CI coverage step now prints, since a skipped tier is not coverage.
+are AVX512BW instructions. `/proc/cpuinfo` prints the flags with mixed spellings — `avx512f`,
+`avx512bw`, `avx512_vnni` on the Zen 4 box — which is why the CI coverage step accepts both forms,
+since a skipped tier is not coverage.
 
-**On an actual Zen 4 core (Ryzen 7 7800X3D) tier v4 measures slower than tier v3**, so the
-ladder's top-down order is not a good assumption on every ISA. Same binary, same machine, one
-run each, int8 path only:
+**Tier v4 on an actual Zen 4 core (Ryzen 7 7800X3D), measured.** Issue #16 reported tier v4 as
+slower than tier v3 end to end (114.9 µs of network vs 77.5 µs, one run each) and blamed the
+per-chunk `vpaddb`. Per row — same machine, same binary, isolated kernel, the model's hot width
+(`m = 384`, `n = 1152`) — the picture is different:
 
-| int8 | neural net | full frame |
-|---|--:|--:|
-| tier v4 (`vpdpbusd`), what `select` picks here | 114.9 µs | 135.9 µs |
-| tier v3 (AVX2), AVX-512 branch disabled in `select::dense_q8` | **77.5 µs** | **98.5 µs** |
+| shape | ns/row | MACs/cycle |
+|---|--:|--:
+| tier v3 as committed | 17.29 | 4.8 |
+| tier v3, four accumulators | 8.44 | 9.9 |
+| tier v4 as committed (`vpaddb` per chunk, one accumulator) | 4.88 | 17.1 |
+| tier v4, `+128` hoisted out of the loop | 4.77 | 17.5 |
+| tier v4, `+128` hoisted into registers, four accumulators | **3.06** | **27.3** |
 
-The cost is the bias instruction: `vpdpbusd` is unsigned × signed, so the kernel pays one
-`vpaddb` per chunk, and Zen 4 double-pumps 512-bit µops, so the tier lands on AVX2's
-per-cycle MAC rate with extra µops on top. ARM is not in this comparison because `sdot` is
-signed × signed and needs no bias at all. Options (unmeasured): move the `+128` into the
-stored weight domain, or precompute the per-row `128 · Σ w` correction at quantize time so the
-hot loop is load + `vpdpbusd` only, or gate the ladder per ISA on measured rates. Tracked as
-issue #16.
+So the ladder's top-down assumption is not what was wrong: on this core tier v4 is ~3.5× tier v3
+per row, and the bias instruction is worth about 2% of a row, not 1.48×. The fixed per-row part
+(horizontal sum + int→float + scale + store) fits to 0.7–1 ns of a ~5 ns row — real, as #16
+suspected, but not the story. What is worth something is the load port: 6 activation loads per row
+are the same size as 6 weight loads, and keeping the biased activations in registers removes them.
+
+Landed here: `quantize()` stores the per-row `128 · Σ w` correction, the activations are biased once
+per layer at the top of the call, and the hot path — every quantized layer in the model is 384
+bytes, exactly 6 chunks — runs `load + vpdpbusd` only, with four independent accumulator chains
+because one `vpdpbusd` chain costs more than the tier's throughput. Still exact integer arithmetic,
+so tier v4 remains bit-identical to the reference. Four accumulators on **tier v3** measured 2× in
+isolation and no gain at the level the crate runs (`83.4 µs` vs `84.9 µs` of network per frame,
+median of three runs, Zen 3), so tier v3 keeps one accumulator.
+
+**Re-measured on the same box at the level the crate runs**, five rounds on one core, min, same
+toolchain:
+
+| build | tier `select` picks | int8 NN µs/frame | ns/row | full frame |
+|---|---|--:|--:|--:|
+| tier v4 as it now is (bias hoisted into registers, 4 accumulators) | v4 | **45.5** | 5.25 | 66.8 |
+| tier v4 as #16 measured it (`vpaddb` per chunk, 1 accumulator) | v4 | 52.8 | 6.25 | 74.0 |
+| tier v3 (AVX-512 branch forced off) | v3 | 78.2 | 9.73 | 99.4 |
+| float path, same box, same binary | — | 114.4 | — | 136.1 |
+
+So #16's premise was a measurement error, not an ISA fact: the 114.9 µs / 135.9 µs attributed to
+tier v4 are the **float path's** numbers (114.4 / 136.1 on the same core, within noise) — its
+tier v3 row (77.5 / 98.5) does match the AVX2 tier. Tier v4 was never slower than tier v3 on this
+core; it was 52.8 vs 78.2 µs at the old shape and 45.5 vs 78.2 at the committed one. The ladder
+stays top-down, so `select` does not get a per-ISA table.
+
+One methodological point for the tier tables: an isolated kernel and the crate do not measure the
+same thing. The shape ratios above are real, but the crate damps them — a 37% per-row shape gain
+came out as 16% end to end, because the isolated kernel keeps 442 KB hot in L2 while the model
+streams 2.8 MB of int8 weights per frame from L3. Per-row numbers in this doc must say which level
+they were taken at.
 
 Every int8 tier produces the **same exact integer** (products and pair sums fit in `i32`
 for the model's widths), so the quantized output is unchanged — the accuracy test
 still reports `rel_energy 4.826e-6`, and `src/simd/tests.rs` asserts tier == scalar
 for every tier the CPU reports, skipping the others. The VNNI bias identity
-(`Σ(w+128)·x − 128·Σx == Σ w·x`) is also unit-tested in pure Rust, so it is checked
+(`Σ u8(x+128)·w − 128·Σ w == Σ x·w`) is also unit-tested in pure Rust, so it is checked
 even on runners without AVX-512.
 
 ### Block-major dense float GEMV (parity-safe, x86-64 tier)
