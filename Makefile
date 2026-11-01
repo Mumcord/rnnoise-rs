@@ -47,7 +47,7 @@ deny: ## cargo deny (advisories, licenses, bans, sources) — config in deny.tom
 	cargo deny check
 
 bench: ## criterion benchmarks, results saved as a baseline for CI artifacts
-	cargo bench --all-features -- --save-baseline ci
+	cargo bench --all-features --bench process -- --save-baseline ci
 
 reference: ## build the pinned Xiph C reference (scalar _c path) and run the clips
 	./scripts/c_reference.sh

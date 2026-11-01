@@ -57,9 +57,13 @@ jobs:
       - name: Which SIMD tiers this runner can exercise
         # A green run on a runner is not coverage of a tier it cannot execute; say what
         # this machine has, and let the tests report what they actually exercised.
+        # `shell: bash` because the default shell on Windows is PowerShell, and
+        # /proc/cpuinfo does not exist there — the step reports, it does not decide.
+        shell: bash
         run: |
-          echo "cpu: $(uname -m)"
-          echo "tiers exercisable: $(grep -m1 'flags' /proc/cpuinfo 2>/dev/null | tr ' ' '\n' | grep -E '^(sse4_1|avx2|avx512f|avx512_bw|avx512bw|avx512_vnni|avx512vnni|dotprod)$' | tr '\n' ' ')"
+          echo "cpu: $(uname -m || echo unknown)"
+          flags=$( { grep -m1 'flags' /proc/cpuinfo || true; } 2>/dev/null)
+          echo "tiers exercisable: $(printf '%s\n' "$flags" | tr ' ' '\n' | grep -E '^(sse4_1|avx2|avx512f|avx512_bw|avx512bw|avx512_vnni|avx512vnni|dotprod)$' | tr '\n' ' ' || true)"
       - run: cargo build --all-features --verbose
       - name: Test
         run: cargo test --all-features ${{ matrix.profile == 'release' && '--release' || '' }} -- --nocapture
@@ -177,7 +181,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Bench
-        run: cargo bench --all-features -- --save-baseline ci
+        run: cargo bench --all-features --bench process -- --save-baseline ci
       - uses: actions/upload-artifact@v4
         with:
           name: bench-${{ matrix.runner }}-${{ matrix.tier }}

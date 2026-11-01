@@ -54,7 +54,9 @@ if [ ! -f "$CACHE/src/rnnoise_data.c" ]; then
     actual="$(shasum -a 256 "$tarball" | awk '{print $1}')"
   fi
   [ "$actual" = "$MODEL_HASH" ] || { rm -f "$tarball"; skip "model checksum mismatch ($actual)"; }
-  tar -xzf "$tarball" src/rnnoise_data.c src/rnnoise_data.h -C "$CACHE"
+  # -C after the member list is GNU-tar-only; BSD tar (macOS) errors. Extract in the
+  # cache directory itself.
+  ( cd "$CACHE" && tar -xzf "$tarball" src/rnnoise_data.c src/rnnoise_data.h )
 fi
 
 [ "$(cat "$CACHE/model_version")" = "$MODEL_HASH" ] ||
