@@ -148,7 +148,7 @@ opt-in; the float model stays the default. (A naive dequant-to-f32 int8 loop, by
 contrast, measured *0.81×* — slower — confirming the win is the instruction-count
 reduction, not bandwidth.)
 
-### 2. x86 int8 SIMD — ✅ *implemented (AVX2), VNNI pending*
+### 2. x86 int8 SIMD — ✅ *implemented (SSE2 → SSE4.1 → AVX2 → VNNI, runtime-detected)*
 
 `src/simd/` dispatches per architecture. On x86-64 the kernel is
 `pmovsxbw` + `pmaddwd` (runtime AVX2 detection); before that the int8 path had no
@@ -158,10 +158,27 @@ int8 net 487 → **88 µs** (5.6×), full frame 519 → **120 µs** (84× real t
 legacy 40.2 → 37.8 µs. Still exact int32, so output is unchanged.
 
 `vpdpbusd` (AVX-VNNI / AVX-512-VNNI, 64 MACs per instruction on Zen 4+ / Ice
-Lake+) is the remaining step: it is unsigned × signed, so it needs a biased weight
-domain plus a `128 · Σ q_x` correction (and the 512-bit `core::arch` types postdate
-the crate's `rust-version`). Estimated another 2–4× on such CPUs; not measurable on
-the Zen 3 box used here.
+Lake+) is now tier v4 of the int8 ladder: it is unsigned × signed, so it needs a biased
+weight domain plus a `128 · Σ q_x` correction (`simd/x86_64/vnni.rs`, asserted exact by
+`simd/tests.rs`), and it is only *used* when CPUID reports `avx512f` + `avx512bw` +
+`avx512vnni` (`set1_epi8`/`add_epi8` are AVX512BW) — which is why `rust-version` is 1.89.
+
+**Measured on a Zen 4 core (Ryzen 7 7800X3D), the tier is slower, not faster.** Same
+binary, same machine, one run each, tier selected by runtime detection:
+
+| int8 path | neural net | full frame |
+|---|--:|--:|
+| tier v4 (`vpdpbusd`), what `select` picks on this CPU | 114.9 µs | 135.9 µs |
+| tier v3 (AVX2), with the AVX-512 branch in `select::dense_q8` disabled | **77.5 µs** | **98.5 µs** |
+
+So the 2–4× estimate above was wrong as written: on this core tier v4 costs **1.48×**
+relative to tier v3. The reason is the bias — `vpdpbusd` is unsigned × signed, so every
+chunk pays a `vpaddb` on top, and Zen 4 double-pumps 512-bit µops, which puts the tier at
+the same per-cycle MAC rate as AVX2 plus the extra µops. ARM is unaffected: `sdot` is
+signed × signed and needs no bias. Two ways out, neither measured yet: precompute the biased
+weight domain (or the per-row `128 · Σ w` correction) at quantize time so the hot loop is
+load + `vpdpbusd` only, or gate the ladder on the measured rate per ISA instead of assuming
+top-down is better. Tracked in issue #16.
 
 ### 3. f16 weights + f16 SIMD — *medium win (future)*
 
@@ -191,9 +208,15 @@ custom one) trades some quality for speed and footprint.
 
 ### Recommended priority
 
-int8 + `sdot` (#1) is done and is the big lever on ARM. Next: VNNI for x86 (#2),
-then the real-input FFT (#5) for a broad front-end win; f16 (#3) and threading
-(#4) as needed.
+int8 + `sdot` (#1) is done and is the big lever on ARM; the x86 int8 ladder (#2) is
+done too, per ISA tier, runtime-detected. The x86 **float** path (issue
+[#1](https://github.com/Mumcord/rnnoise-rs/issues/1)) is at its throughput ceiling: the
+tiers landed, the "3×" acceptance criterion was measured to be unreachable (1.6–1.9× of the
+pre-tier baseline; ≤1.2× for the FMA variant on top of the committed block-major tier), and
+an SSE4.1 float tier would be the SSE2 kernel with a different name — see
+[doc/performance.md](doc/performance.md#fma-and-sse41-on-x86-64-measured-and-not-shipped).
+Next: the real-input FFT (#5) for a broad front-end win; f16 (#3) and threading (#4) as
+needed.
 
 ## Reproduce
 

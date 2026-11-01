@@ -39,8 +39,11 @@ The SIMD int8 dot kernels are chosen per CPU at runtime (CPUID + cached feature
 flags, once per matmul call), so a plain `cargo build` binary still uses AVX2 on an
 AVX2 CPU and the AVX-512 VNNI kernel on a Zen 4 / Ice Lake+ CPU. `#[target_feature]`
 is applied to the kernel functions only, never to the crate, so nothing requires
-`-C target-cpu=x86-64-v3` or `-C target-cpu=native` — those flags still help the
-float path (FMA), but they are not needed for the int8 kernels.
+`-C target-cpu=x86-64-v3` or `-C target-cpu=native`. Those flags still let the compiler
+contract `a*b + c` into an FMA on the float path, which changes the rounding per step — the
+float tiers deliberately do not do that, and measured it is not a reason to deviate: on a Zen
+3 core the explicit FMA kernels give ≤1.2× on the row-major shapes and nothing on the
+block-major ones (see [performance.md](performance.md#fma-and-sse41-on-x86-64-measured-and-not-shipped)).
 
 ## Crate outputs
 
