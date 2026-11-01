@@ -85,6 +85,12 @@ jobs:
             tier: sse4.1
           - runner: ubuntu-latest
             tier: avx2
+          # Tier v4 runs here: the current ubuntu-latest hardware is Zen 4 (this run's
+          # coverage table shows `vnni` exercised, not skipped). If a runner ever lacks
+          # AVX512F+BW+VNNI this entry fails instead of skipping — that is the point,
+          # a requested tier that cannot run is uncovered coverage.
+          - runner: ubuntu-latest
+            tier: vnni
           - runner: ubuntu-24.04-arm
             tier: scalar
           - runner: ubuntu-24.04-arm
