@@ -4,6 +4,9 @@ on:
   push:
     branches: [main, dev]
   pull_request:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,6 +21,13 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Which SIMD tiers this runner can exercise
+        # `simd/tests.rs` skips a tier whose CPU feature is not present, so a green run here
+        # is not coverage of tier v4. Say what the runner can actually run; the test prints
+        # the same for the tiers it exercised.
+        run: |
+          echo "cpu: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"
+          echo "tiers exercisable: $(grep -m1 'flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(sse4_1|avx2|avx512f|avx512_bw|avx512_vnni)$' | tr '\n' ' ')"
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -25,6 +35,34 @@ jobs:
       - name: Build
         run: cargo build --all-features --verbose
       - name: Test
-        run: cargo test --all-features --verbose
+        run: cargo test --all-features --verbose -- --nocapture
       - name: Test (release / parity)
-        run: cargo test --release --verbose
+        run: cargo test --release --verbose -- --nocapture
+
+  simd-tier-coverage:
+    name: tier v4 exercised on real AVX-512 hardware
+    # Only runs when a runner with the ISA is wired up (repository variable
+    # `avx512_runner`, a runner label such as `avx512`). Without the variable the job is
+    # skipped rather than queued forever. This is the part of the gate that a GitHub-hosted
+    # runner cannot provide: its CPU is not something the workflow can choose.
+    if: ${{ vars.avx512_runner != '' }}
+    runs-on: ${{ vars.avx512_runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Fail loudly if this runner is not AVX-512 + VNNI
+        run: |
+          flags=$(grep -m1 'flags' /proc/cpuinfo)
+          for f in avx512f avx512_bw avx512_vnni; do
+            grep -q " $f" <<<"$flags" || { echo "runner has no $f — tier v4 cannot be exercised here"; exit 1; }
+          done
+          echo "exercising tier v4 on: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"
+      - name: Test (tier equality, all tiers must run)
+        run: |
+          set -o pipefail
+          cargo test --all-features -- --nocapture 2>&1 | tee coverage.log
+          grep -q 'x86-64 tier coverage: every tier ran here' coverage.log || {
+            echo 'tier v4 did not run on this runner — the gate needs an AVX-512 + VNNI CPU'
+            exit 1
+          }
