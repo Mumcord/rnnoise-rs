@@ -1,0 +1,12 @@
+# doc/styleguide.md: panics must not be caught, and the library must not spawn
+# threads — this is a real-time audio path called from a C callback.
+disallowed-methods = [
+    { path = "std::panic::catch_unwind", reason = "styleguide: no catch_unwind in first-party code" },
+    { path = "std::thread::spawn", reason = "styleguide: the library must not start threads" },
+]
+
+# Shared ownership stays a documented exception for the immutable model (rule C5);
+# plain Rc is what the guide wants to keep out.
+disallowed-types = [
+    { path = "std::rc::Rc", reason = "styleguide: prefer unique ownership; Arc is the documented exception for the shared model" },
+]

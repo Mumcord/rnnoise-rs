@@ -6,6 +6,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **Style ruleset**: the adopted subset of the Google Rust style guide is now
+  `doc/styleguide.md` (derivation and measured gaps:
+  `doc/styleguide-adoption-plan.md`). Each rule is either tool-enforced or
+  explicitly waived. `make style` — part of `make check` and of CI — checks what
+  no lint can express: the stable toolchain, module-root purity, the unsafe
+  islands, `SAFETY:` justifications, glob-import exemptions, one-module-per-`use`,
+  `rustfmt::skip`, and the no-async/no-threads/no-`catch_unwind` rule.
+- `Cargo.toml` gained a `[lints]` section (`unsafe_code`, `missing_docs`,
+  `unstable_features`, `unwrap_used`, `panic`, `must_use_candidate`,
+  `exhaustive_enums`, `exhaustive_structs`, `wildcard_imports`,
+  `disallowed_methods`), and `clippy.toml` disallows `catch_unwind` and
+  `std::thread::spawn`. `rustfmt.toml` gained `hex_literal_case = Lower`
+  (`format_macro_matchers` and `imports_granularity` are nightly-only, so the
+  one-module-per-`use` rule is checked by `make style` instead).
+- The crate-wide `#![forbid(unsafe_code)]` claim in `AGENTS.md`/`CONTRIBUTING.md`
+  was not true in practice (SIMD intrinsics and the C ABI). It is now the honest
+  version: `unsafe_code = "deny"` at the crate root, with `#[allow(unsafe_code)]`
+  only on the declared islands, and a `SAFETY:` justification per block or file.
+- No `unwrap()` left in `src/`: pattern matching where the input proves the case,
+  `expect("context")` otherwise.
+- The model-geometry constants moved out of the crate root into the leaf `params`
+  module; `lib.rs` only declares submodules and re-exports. `rnnoise::FRAME_SIZE`
+  and the other sizes are re-exported from the crate root, so the paths are stable.
+- `src/fft/plan.rs` → `src/fft/kiss_fft.rs`, named after its primary item
+  (`KissFft`). Internal only: `KissFft` was never reachable from outside the
+  private `fft` module, so no public path changed.
+- `tests/api_surface.rs` names every exported item, so a public rename or removal
+  is a compile failure rather than a silent break.
+
+### Deprecated
+
+- `DenoiseState::with_model` and `DenoiseStateV1::with_model` are deprecated in
+  favour of `DenoiseState::new_with_model()` and `DenoiseStateV1::new_with_model()`:
+  `with_foo()` is reserved for
+  closure accessors, so constructors take the `new_with_foo()` form. The aliases
+  are source-compatible and will be removed in 0.3.
+
+### Breaking
+
+- `ModelError` is now `#[non_exhaustive]` (guide rule), which means downstream
+  exhaustive `match` statements without a wildcard arm no longer compile. This is
+  the price of being able to add error variants later without a breaking change.
+
+
 ### Added
 
 - Repository scaffolding aligned with the sibling `lovelace-labs/*-rs` repos:

@@ -68,15 +68,32 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
 3. Open a pull request with a clear title (Conventional Commits format) and
    a description of what changed and why. Link related issues.
 4. Address review feedback by pushing additional commits.
+5. Fill in the [pull request template](.github/PULL_REQUEST_TEMPLATE.md): the gate
+   checklist, and the exemption number from `doc/styleguide.md` for any rule you
+   knowingly break.
 5. Squash and merge after approval.
 
 ## Coding standards
 
+The full ruleset is [doc/styleguide.md](doc/styleguide.md), adapted from the
+[Google Rust style guide](https://google.github.io/styleguide/rustguide.html).
+The short version:
+
 - Run `cargo fmt` (enforced by CI).
-- All clippy warnings are errors (`-D warnings`).
-- Document public items with `///` comments.
-- Prefer `Result` over panics for recoverable errors.
-- `#![forbid(unsafe_code)]` where it is set — keep the crate unsafe-free.
+- All clippy warnings are errors (`-D warnings`); the lint set lives in
+  `Cargo.toml` under `[lints]`.
+- Document public items with `///` comments (`missing_docs` is denied).
+- Prefer `Result` over panics for recoverable errors; `Option` for obvious
+  failures; `panic!` only for violated invariants.
+- No `unwrap` in `src/` — pattern-match when the input proves the case, otherwise
+  `expect("context")`. Tests use `expect` with an assertion context string.
+- Unsafe only in the declared islands (`src/capi.rs`, `src/simd/`,
+  `src/fft/x86_64.rs`, `src/fft/dispatch.rs`), each with a `SAFETY:` justification.
+- No `catch_unwind`, no threads (denied via `clippy.toml`), no unstable features.
+  No async in the DSP path, nothing before `main()`, no `rustfmt::skip` except manual
+  alignment — these are review rules, not lints.
+- The gate is `make check`: everything it enforces is a lint level. The rest of
+  `doc/styleguide.md` is deliberately review-only.
 
 ## Module organization
 

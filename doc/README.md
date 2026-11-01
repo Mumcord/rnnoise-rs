@@ -22,6 +22,8 @@ snippet, see the top-level [`README.md`](../README.md); for live API docs run
 | [parity.md](parity.md) | How "numerically equivalent to upstream" is defined, measured and tested, and the exact results. |
 | [performance.md](performance.md) | Throughput, the memory/compute profile, the SIMD/quantization optimizations, and how to reproduce the numbers. See also [`BENCHMARKS.md`](../BENCHMARKS.md). |
 | [building.md](building.md) | Building, features, the CLI demo, the C/staticlib/cdylib artifacts, and CI. |
+| [styleguide.md](styleguide.md) | The adopted Rust style ruleset (Google Rust style guide), which rules are tool-enforced, and which are waived for parity. |
+| [styleguide-adoption-plan.md](styleguide-adoption-plan.md) | How that ruleset was derived, the measured gaps, and the sequence it was landed in. |
 
 ## At a glance
 
