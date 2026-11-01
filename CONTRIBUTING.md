@@ -29,7 +29,7 @@ workflow used across all `lovelace-labs/*-rs` repos.
 ```bash
 make build       # cargo build
 make test        # cargo test
-make check       # fmt-check + clippy + test (the CI gate)
+make check       # fmt-check + clippy + test + cargo-deny (the CI gate)
 ```
 
 Run `make help` for the full list of targets.
@@ -73,6 +73,22 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`.
    knowingly break.
 5. Squash and merge after approval.
 
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs five jobs:
+
+| job | what it checks |
+|---|---|
+| `lint` | `cargo fmt --check`, clippy `-D warnings`, `cargo deny check`, cspell, and `scripts/style.sh` (the rules no lint can express) |
+| `test` | the suite on ubuntu x86-64, ubuntu-arm aarch64, macOS (Apple Silicon) and Windows, debug and release |
+| `simd` | each kernel path, forced with `RNNOISE_SIMD_TIER`, over the tiers the runner has |
+| `c-reference` | the pinned scalar C reference built in CI and compared with the committed goldens |
+| `bench` | criterion per architecture **and per tier** (`simd-tier-override` feature + `RNNOISE_SIMD_TIER`), JSON results uploaded as artifacts |
+
+`simd` requests only tiers its runners actually have: requesting a tier the CPU lacks is a
+failure, not a skip, because CI promised that coverage. `c-reference` and the parity test
+skip gracefully when the toolchain, the network or the clips are absent.
+
 ## Coding standards
 
 The full ruleset is [doc/styleguide.md](doc/styleguide.md), adapted from the
@@ -92,8 +108,9 @@ The short version:
 - No `catch_unwind`, no threads (denied via `clippy.toml`), no unstable features.
   No async in the DSP path, nothing before `main()`, no `rustfmt::skip` except manual
   alignment — these are review rules, not lints.
-- The gate is `make check`: everything it enforces is a lint level. The rest of
-  `doc/styleguide.md` is deliberately review-only.
+- The gate is `make check`: `fmt-check`, `clippy`, `style`, `spell`, `test`, `deny`.
+  `style` and `spell` check what lints cannot express; the rest of `doc/styleguide.md` is
+  review-only.
 
 ## Module organization
 

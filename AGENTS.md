@@ -50,7 +50,7 @@ Acceptance criteria for any new or refactored code (binding):
 ## Build & test
 
 ```sh
-make check       # fmt + clippy + test (the CI gate)
+make check       # fmt + clippy + test + cargo-deny (the CI gate)
 ```
 
 Runs `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`,

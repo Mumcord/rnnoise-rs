@@ -9,8 +9,10 @@ Links to issues where relevant.
 
 ## Gate
 
-- [ ] `make check` (fmt + clippy + test) is green
+- [ ] `make check` (fmt + clippy + test + cargo-deny) is green
 - [ ] `cargo test --release` — the parity harness is unchanged, byte for byte
+- [ ] `cargo test --test c_reference_parity` — the goldens still match the pinned C
+      oracle build on CI hardware
 - [ ] style commits and behaviour commits are separate commits
 - [ ] public API changes have a `CHANGELOG.md` entry, and `tests/api_surface.rs`
       still compiles unchanged

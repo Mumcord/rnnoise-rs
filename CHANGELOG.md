@@ -28,7 +28,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The tier gate in CI now accepts both `/proc/cpuinfo` spellings for the AVX512BW flag
   (`avx512_bw` and `avx512bw`); a Zen 4 runner prints the second, so the coverage job
-  false-negativied on hardware that can actually exercise tier v4 (issue #16).
+  reported a false negative on hardware that can actually exercise tier v4 (issue #16).
 
 
 - **Style ruleset**: the adopted subset of the Google Rust style guide is now
@@ -97,6 +97,52 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   repository variable `avx512_runner`, failing if a tier is skipped. What is provable without
   the hardware (tier v4's `128 · Σ q_x` bias identity) is asserted unconditionally, on every
   runner.
+
+- CI (issue #5): the job matrix now covers ubuntu x86-64, ubuntu-arm aarch64,
+  macOS (Apple Silicon) and Windows, in debug and release; `cargo deny` is part of
+  the gate (`deny.toml`, `make deny`, and `make check`).
+- `scripts/c_reference.sh`: builds the pinned upstream RNNoise in the scalar (`_c`)
+  path in CI and runs the clip set, so the committed goldens are checked against a
+  fresh oracle build instead of being taken on trust. `tests/c_reference_parity.rs`
+  does the comparison with the `doc/parity.md` tolerance and skips gracefully when
+  the oracle or the clips are absent.
+- `test_data/clips/` (deterministic, regenerable with `scripts/make_clips.py`): a
+  stable-pitch clip, a near-silence clip and digital silence, with goldens in
+  `test_data/goldens/`. With the oracle built on `vec.h`'s pure-C branch (the path this
+  crate ports; `-U__SSE2__ -U__AVX__` on x86-64, `-DDISABLE_NEON` on AArch64) all three
+  are **bit-exact** against the pinned C reference, and `test_data/ref_out.raw` is
+  reproducible within 4 samples — the previous recipe only disabled NEON, so a fresh x86
+  build took `vec_avx.h` and disagreed by ~1800 1-LSB samples. Goldens regenerated from
+  the corrected oracle; the assertion in `tests/c_reference_parity.rs` is now
+  `max ≤ 1 LSB` for oracle-vs-golden.
+- `.gitattributes` marks `test_data/**` and `*.raw` as binary: a line-ending conversion
+  there changes a sample, which is what the parity harness measures.
+- `src/simd/tier.rs`: the tier decision is one function (`resolve`) instead of a
+  ladder duplicated per kernel, plus a `cfg(test)`-only `RNNOISE_SIMD_TIER` override
+  so CI can force each path on hardware that has it — a production build pays nothing
+  for it and no tier can be forced onto a CPU without the ISA. No public API changed.
+- `src/simd/coverage.rs`: runs the whole pipeline once per tier the runner reports
+  (float and int8 paths) and asserts bit-identical output against the scalar run,
+  printing which tiers ran and which were skipped.
+- `benches/process.rs` is a criterion harness (one group per implementation, active
+  and silent inputs); CI saves a baseline and uploads the JSON results per runner.
+- `scripts/style.sh` (`make style`, part of `make check`): the review rules that can be
+  checked mechanically — module-root purity, unsafe island membership, the `SAFETY:`
+  justification per file, one-module-per-`use`, glob imports only in the exemptions,
+  `rustfmt::skip` only with a cited exemption, and no async/threads/`unwrap` in `src/`.
+  Running it found a real gap: `src/fft/tests.rs` had unsafe calls with no `SAFETY:`
+  justification (added).
+- `make spell` + CI spell check with a repo dictionary in `cspell.json` (the DSP/ISA
+  vocabulary: `sgemv`, `xcorr`, `pmaddwd`, `vpdpbusd`, `cepstral`, `biquad`, …).
+- `simd-tier-override`: an opt-in, dev/CI-only feature that honours `RNNOISE_SIMD_TIER` in
+  a normal build, so `cargo bench` can measure one kernel path against another on the same
+  machine. Never enabled by default; zero cost when off.
+- `Cargo.lock` is committed, so `cargo deny` checks a reproducible graph instead of
+  freshly resolved versions.
+- `simd::coverage` now fails instead of skipping when CI requests a tier the runner does
+  not have — the promise was coverage, so an uncovered path is a failure. The
+  `simd` matrix lists only tiers its runners can execute; v4 still needs an AVX-512 machine,
+  and the pure-Rust identity test in `simd::tests` validates it anywhere else.
 
 ### Fixed
 
