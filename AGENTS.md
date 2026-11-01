@@ -43,18 +43,22 @@ Acceptance criteria for any new or refactored code (binding):
 5. **Style** — the adopted ruleset is [doc/styleguide.md](doc/styleguide.md)
    (adapted from the Google Rust style guide). Rules are either tool-enforced or
    explicitly waived; if a rule is broken, the PR/commit cites the exemption by
-   number. `make check` is the whole gate: everything it enforces is a lint level,
-   and the rules no lint can express (SAFETY comments, module-root purity, one-module-
-   per-`use`, `rustfmt::skip`, async) are review rules.
+   number. `make check` is the whole gate: everything it enforces is a lint level or a
+   scripted check (`make style`, `make spell`, `make rt-gate`), and the rules no lint can
+   express (SAFETY comments, module-root purity, one-module-per-`use`, `rustfmt::skip`,
+   async) are review rules.
 
 ## Build & test
 
 ```sh
-make check       # fmt + clippy + test + cargo-deny (the CI gate)
+make check       # fmt + clippy + style + spell + test + deny + rt-gate (the CI gate)
 ```
 
-Runs `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`,
-and `cargo test`. See [Makefile](Makefile) for the full list of targets.
+Runs `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`,
+`make style`, `make spell`, `cargo deny check`, and `python3 scripts/realtime_gate.py` — the
+source gate for the real-time contract (the per-frame path must not allocate, lock, do I/O,
+log, or probe CPU features outside the dispatch layer; see [doc/realtime.md](doc/realtime.md)).
+See [Makefile](Makefile) for the full list of targets.
 
 ## Git
 

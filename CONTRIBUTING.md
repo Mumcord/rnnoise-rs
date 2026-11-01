@@ -29,7 +29,7 @@ workflow used across all `lovelace-labs/*-rs` repos.
 ```bash
 make build       # cargo build
 make test        # cargo test
-make check       # fmt-check + clippy + test + cargo-deny (the CI gate)
+make check       # fmt-check + clippy + style + spell + test + deny + rt-gate (the CI gate)
 ```
 
 Run `make help` for the full list of targets.
@@ -108,8 +108,11 @@ The short version:
 - No `catch_unwind`, no threads (denied via `clippy.toml`), no unstable features.
   No async in the DSP path, nothing before `main()`, no `rustfmt::skip` except manual
   alignment — these are review rules, not lints.
-- The gate is `make check`: `fmt-check`, `clippy`, `style`, `spell`, `test`, `deny`.
-  `style` and `spell` check what lints cannot express; the rest of `doc/styleguide.md` is
+- The gate is `make check`: `fmt-check`, `clippy`, `style`, `spell`, `test`, `deny`,
+  `rt-gate`. `style` and `spell` check what lints cannot express; `rt-gate`
+  (`scripts/realtime_gate.py`) checks the real-time contract per function — no allocation,
+  lock, lazy static, I/O, logging or CPUID probe inside a per-frame function — and
+  `tests/real_time_no_alloc.rs` proves it at runtime. The rest of `doc/styleguide.md` is
   review-only.
 
 ## Module organization
