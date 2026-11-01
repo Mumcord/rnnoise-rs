@@ -11,7 +11,13 @@
 use crate::simd::{scalar, x86_64};
 
 pub(crate) fn dense_q8(out: &mut [f32], w: &[i8], scale: &[f32], m: usize, n: usize, qx: &[i8]) {
+    // `avx512bw` is checked as well as `avx512f` + `avx512vnni`: `vpdpbusd` needs the
+    // VNNI bit, but the tier also uses `set1_epi8`/`add_epi8` for the +128 bias, which are
+    // AVX512BW instructions. In practice every CPU with AVX512VNNI has AVX512BW, but the
+    // gate should not depend on that (a CPUID-only Intel part such as AVX512CD-era CN does
+    // not, and the check is one call).
     if std::arch::is_x86_feature_detected!("avx512f")
+        && std::arch::is_x86_feature_detected!("avx512bw")
         && std::arch::is_x86_feature_detected!("avx512vnni")
     {
         unsafe { x86_64::vnni::dense_q8(out, w, scale, m, n, qx) };

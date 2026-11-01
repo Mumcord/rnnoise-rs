@@ -48,6 +48,7 @@ fn every_x86_tier_matches_scalar() {
     let sse41 = std::arch::is_x86_feature_detected!("sse4.1");
     let avx2 = std::arch::is_x86_feature_detected!("avx2");
     let vnni = std::arch::is_x86_feature_detected!("avx512f")
+        && std::arch::is_x86_feature_detected!("avx512bw")
         && std::arch::is_x86_feature_detected!("avx512vnni");
 
     if sse41 {

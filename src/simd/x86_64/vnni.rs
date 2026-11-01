@@ -9,18 +9,20 @@
 //! in `i32`, so the result equals the scalar reference exactly.
 //!
 //! Needs Rust ≥ 1.89 for the AVX-512 intrinsics and the `avx512f` target feature
-//! (hence the crate's `rust-version`). Nothing here forces AVX-512 codegen
+//! (hence the crate's `rust-version`), and the CPU must report `avx512f` + `avx512bw` +
+//! `avx512vnni` — `vpdpbusd` is VNNI, the +128 bias uses AVX512BW `add_epi8`. Nothing here forces AVX-512 codegen
 //! anywhere else: `dispatch` calls in only when CPUID reports the CPU has it.
 
 use core::arch::x86_64::*;
 
 #[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512bw")]
 #[target_feature(enable = "avx512vnni")]
-// SAFETY: requires AVX-512F + AVX-512 VNNI; `select` only calls this after both
-// runtime detections. Unaligned 64-byte loads over `min(w.len(), x.len())` bytes, which
-// is the length the reference zips to, so no load reads past either slice; `vpdpbusd` is
-// unsigned x signed, which is why the caller passes the `128 * sum(x)` correction for
-// exactly that length.
+// SAFETY: requires AVX-512F + AVX512BW + AVX-512 VNNI; `select` only calls this after all
+// three runtime detections (`set1_epi8`/`add_epi8` are AVX512BW). Unaligned 64-byte loads
+// over `min(w.len(), x.len())` bytes, which is the length the reference zips to, so no load
+// reads past either slice; `vpdpbusd` is unsigned x signed, which is why the caller passes
+// the `128 * sum(x)` correction for exactly that length.
 unsafe fn dot_biased(w: &[i8], x: &[i8], bias: i32) -> i32 {
     let mut acc = _mm512_setzero_si512();
     // +128 as bytes: 0x80. `vpaddb` is modular, so this is the unsigned bias.
@@ -43,6 +45,7 @@ unsafe fn dot_biased(w: &[i8], x: &[i8], bias: i32) -> i32 {
 }
 
 #[target_feature(enable = "avx512f")]
+#[target_feature(enable = "avx512bw")]
 #[target_feature(enable = "avx512vnni")]
 pub(crate) unsafe fn dense_q8(
     out: &mut [f32],
