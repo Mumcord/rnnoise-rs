@@ -15,6 +15,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The pitch feature is computed in double, as the C reference computes it**
+  (`src/denoise.rs`, `src/legacy.rs`). Upstream writes `features[2*NB_BANDS] =
+  .01*(pitch_index-300)` with `.01` a `double`, so the product is computed in double and
+  narrowed to float; the port used an `f32` literal, which was the one feature where it
+  disagreed with the pinned pure-C oracle. Measured on `test_data/testing.raw`: 3 differing
+  samples (1 LSB, `2.003e-10`) before, **0** after — the port is bit-exact against the pinned
+  recipe on all four clips, and `tests/parity.rs` now asserts equality instead of a spread.
+  Behaviour change: an input whose pitch index lands on the last bit can now come out 1 LSB
+  apart from before. `src/legacy.rs` applies the same promotion; its measured numbers do not
+  move there, because that path quantizes the GRU input to int8 anyway.
+  Goldens regenerated from the pinned recipe (`WRITE_GOLDENS=1 ./scripts/c_reference.sh`); the
+  golden the earlier clang build produced is kept as
+  `test_data/goldens/testing.c-clang.raw` for provenance and stays within the 1-LSB
+  compiler hedge.
+
 - **x86-64 int8 tier v4 (AVX-512 VNNI)** — the `+128` that `vpdpbusd` needs is paid once per layer
   instead of once per chunk, and the model's hot width (384 bytes = exactly 6 chunks) keeps the
   biased activations in registers for the whole row loop with four independent accumulator chains.
