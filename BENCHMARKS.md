@@ -75,6 +75,13 @@ by 1 LSB vs the C build).
 port and pitch search aren't as tight as upstream's. It's only ~11 % of the
 frame, so it barely moves the total, but it's the clearest remaining target.
 
+That target is now closed on x86-64: with bit-exact SIMD butterflies, the
+cross-correlation tiers and the precomputed band weights, the front-end is
+**21.8 µs** of a **208–216 µs** frame on the AMD Zen 3 core (full frame was
+270.6 µs; int8 116.8 → 102–107 µs). See [doc/performance.md](doc/performance.md)
+for the tier table. These tiers keep the reference accumulation order, so the
+parity numbers above are unchanged.
+
 **nnnoiseless is faster because its model is smaller, not because the code is
 faster.** Its NN is 9.8 µs (old ~215 K-param model, int8, fits in cache) vs our
 277 µs (new ~2.9 M-param model, 11.5 MB of weights). Per byte of weights,

@@ -16,7 +16,8 @@ runtime feature detection, no `-C target-cpu`. Per-frame is the steady-state cos
 |---|--:|--:|---|
 | current model, float (default) | ~312 µs | ~32× | bit-exact with C, zero deps |
 | current model, int8 + `sdot` (aarch64) | ~105 µs | ~95× | opt-in, audibly identical |
-| current model, int8 + `pmaddwd` (x86-64, Zen 3) | ~120 µs | ~84× | runtime-detected AVX2; 4.3× vs the old scalar path |
+| current model, int8 + `pmaddwd` (x86-64, Zen 3) | ~103 µs | ~97× | runtime-detected AVX2; 4.3× vs the old scalar path |
+| current model, float, x86-64 Zen 3 | ~210 µs | ~47× | see the x86-64 section below |
 | legacy model (`legacy-model`) | ~26 µs | ~309× | **faster than `nnnoiseless`** |
 | — `nnnoiseless` (same old model) | ~28 µs | ~290× | for reference |
 
@@ -66,7 +67,46 @@ Key lesson — because the workload is instruction-bound, *how* you do int8 matt
 nightly-only), guarded by runtime `is_aarch64_feature_detected!("dotprod")`, with
 a scalar fallback that yields the identical integer result.
 
-### x86-64 tiers (int8, parity-safe, runtime-detected)
+### x86-64 float tiers (parity-safe, runtime-detected)
+
+The int8 tiers only help the quantized model, so the float path used to run at the
+plain `x86-64` (SSE2, 4-lane) codegen rate even on an AVX2 machine. `src/simd` now has
+float tiers for the three hot DSP/DNN loops, each of them **bit-identical to the
+portable reference** because it keeps the reference's accumulation order and never
+fuses a multiply with an add:
+
+| kernel | what the tier does | measured on a Zen 3 core |
+|---|---|--|
+| `simd/x86_64/dense.rs` | 8 outputs per accumulator instead of 4 | 384×1152 layer 33.2 → 23.5 µs/frame |
+| `simd/x86_64/xcorr.rs` | 4 (SSE2) / 8 (AVX2) lags in parallel, one accumulator per lag | coarse pitch search 7.2 → 3.0 µs/frame |
+| `fft/x86_64.rs` | vector butterflies over the inner `j`, reading per-stage contiguous twiddle views built by the plan | 4.86 → 2.5 µs per transform (3 per frame) |
+
+Two structural changes make those tiers pay off:
+
+- **Complete sparse indices are dense-equivalent.** The shipped model's GRU matrices are
+  stored in the sparse 8×4 layout, but every row group lists all `nb_inputs/4` blocks in
+  ascending order. The walk then visits each output's contributions in ascending input
+  order — exactly `dense_sgemv`'s order — so `weights.rs` loads such layers in dense
+  row-major form at parse time (same bytes, same bits) and the GEMV can run through the
+  wider tier. Out-of-order or genuinely sparse blobs keep the sparse kernel.
+- **Band weights are precomputed** in `Common` (`j / band_size`, the same f32 division as
+  the runtime did), removing ~317 float divisions per band pass.
+
+End to end, plain `cargo bench`, tier v3 selected at runtime (best of runs):
+
+| | before | after |
+|---|--:|--:|
+| float full frame | 270.6 µs | **208–216 µs** (46–48× real time) |
+| — float front-end | 31.6 µs | **21.8 µs** |
+| int8 full frame | 116.8 µs | **102–107 µs** (94–98× real time) |
+| legacy full frame | 38.1 µs | **33.8 µs** |
+
+Parity is unchanged by all of this (`3 / 47 520 samples, 1 LSB`, `2.003e-10`), which is
+the point of keeping the accumulation order: the tiers are a layout and width change, not
+an arithmetic change. Aarch64 keeps the portable reference for these loops, so its numbers
+are unchanged.
+
+### x86-64 int8 tiers (parity-safe, runtime-detected)
 
 Before this, x86-64 had no int8 dot kernel at all: on the `x86-64` baseline codegen
 (`SSE2`) a byte dot product cannot be vectorized — `pmaddubsw` is SSSE3 and
@@ -139,5 +179,5 @@ input) figure so you can separate the NN from the DSP.
 
 See [`BENCHMARKS.md`](../BENCHMARKS.md) §"How to speed up" and
 [`TODO.md`](../TODO.md): x86 VNNI for the int8 kernel, f16 SIMD, multi-threading
-the GEMVs for batch, and a real-input/SIMD FFT for the current model (which would
-relax its bit-exactness bound).
+the GEMVs for batch, and a real-input FFT for the current model (the SIMD tier is done;
+a real-input transform would relax its bit-exactness bound).
