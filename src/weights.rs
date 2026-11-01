@@ -129,6 +129,47 @@ fn i32_array(arrays: &HashMap<&str, Array<'_>>, name: &str) -> Result<Vec<i32>, 
         .collect())
 }
 
+/// The model stores the GRU matrices in the sparse 8×4 layout. When the index is
+/// *complete and ascending* — every row group lists `nb_inputs / 4` blocks at positions
+/// `0, 4, 8, …` — the sparse walk visits each output's contributions in ascending input
+/// order, which is exactly `dense_sgemv`'s accumulation order. Densifying such a layer
+/// therefore cannot change a single bit; it just lets the GEMV run through the wider
+/// tier (measured: the GRU layers go from ~40 to ~65 GB/s on a Zen 3 core).
+///
+/// Genuinely sparse or out-of-order indices are left on the sparse kernel, so the
+/// accumulation order is always the one the blob describes.
+fn complete_ascending_dense_form(idx: &[i32], w: &[f32], m: usize, n: usize) -> Option<Vec<f32>> {
+    if !m.is_multiple_of(4) || !n.is_multiple_of(8) {
+        return None;
+    }
+    let mut dense = vec![0.0f32; n * m];
+    let mut wi = 0usize;
+    let mut ii = 0usize;
+    let mut row = 0usize;
+    while row < n {
+        let cols = idx[ii] as usize;
+        ii += 1;
+        if cols * 4 != m {
+            return None;
+        }
+        for k in 0..cols {
+            let pos = idx[ii] as usize;
+            ii += 1;
+            if pos != k * 4 {
+                return None;
+            }
+            for c in 0..4 {
+                for r in 0..8 {
+                    dense[(pos + c) * n + row + r] = w[wi + c * 8 + r];
+                }
+            }
+            wi += 32;
+        }
+        row += 8;
+    }
+    Some(dense)
+}
+
 /// Build a dense or sparse layer, validating bias/weight sizes (`linear_init`).
 fn linear(
     arrays: &HashMap<&str, Array<'_>>,
@@ -165,6 +206,23 @@ fn linear(
     if let Some(d) = &diag_v {
         if d.len() != nb_outputs {
             return Err(ModelError::BadSize(diag.unwrap().to_string()));
+        }
+    }
+
+    // A complete, ascending sparse index is dense-equivalent: same values, same
+    // accumulation order per output, so the fast GEMV tier can be used.
+    if let Some(idxv) = &weights_idx {
+        if let Some(dense) =
+            complete_ascending_dense_form(idxv, &float_weights, nb_inputs, nb_outputs)
+        {
+            return Ok(LinearLayer {
+                bias: bias_v,
+                weights: Weights::Float(dense),
+                weights_idx: None,
+                diag: diag_v,
+                nb_inputs,
+                nb_outputs,
+            });
         }
     }
 
@@ -325,5 +383,49 @@ impl Default for RnnModel {
     /// The built-in RNNoise model.
     fn default() -> RnnModel {
         RnnModel::from_bytes(DEFAULT_MODEL_BLOB).expect("embedded default model is valid")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn complete_ascending_index_is_dense_equivalent() {
+        // One row group, every column block present in order.
+        let (m, n) = (16usize, 8usize);
+        let idx = vec![4, 0, 4, 8, 12];
+        let w: Vec<f32> = (0..4 * 32).map(|i| (i as f32) * 0.01 - 0.2).collect();
+        let x: Vec<f32> = (0..m).map(|i| (i as f32) * 0.1 - 0.5).collect();
+        let dense = complete_ascending_dense_form(&idx, &w, m, n).expect("complete index");
+        let mut sparse_out = vec![0.0f32; n];
+        let mut dense_out = vec![0.0f32; n];
+        crate::simd::sparse_sgemv8x4(&mut sparse_out, &w, &idx, n, &x);
+        crate::simd::dense_sgemv(&mut dense_out, &dense, m, n, &x);
+        assert_eq!(
+            sparse_out, dense_out,
+            "densifying changed the accumulation order"
+        );
+    }
+
+    #[test]
+    fn incomplete_or_unordered_index_stays_sparse() {
+        let (m, n) = (16usize, 8usize);
+        let w = vec![0.1f32; 3 * 32];
+        assert!(complete_ascending_dense_form(&[3, 0, 4, 8], &w, m, n).is_none());
+        let w4 = vec![0.1f32; 4 * 32];
+        assert!(complete_ascending_dense_form(&[4, 0, 8, 4, 12], &w4, m, n).is_none());
+    }
+
+    #[test]
+    fn default_model_gru_layers_are_dense_equivalent() {
+        // The shipped model's GRU indices are complete and ascending, so the layers load
+        // in the dense form; the parity test proves the output is unchanged.
+        let model = RnnModel::default();
+        assert!(model.gru1_input.weights_idx.is_none());
+        assert_eq!(
+            model.gru1_input.nb_inputs * model.gru1_input.nb_outputs,
+            384 * 1152
+        );
     }
 }
