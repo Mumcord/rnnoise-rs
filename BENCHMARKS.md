@@ -163,22 +163,38 @@ weight domain plus a `128 · Σ q_x` correction (`simd/x86_64/vnni.rs`, asserted
 `simd/tests.rs`), and it is only *used* when CPUID reports `avx512f` + `avx512bw` +
 `avx512vnni` (`set1_epi8`/`add_epi8` are AVX512BW) — which is why `rust-version` is 1.89.
 
-**Measured on a Zen 4 core (Ryzen 7 7800X3D), the tier is slower, not faster.** Same
-binary, same machine, one run each, tier selected by runtime detection:
+**Measured on a Zen 4 core (Ryzen 7 7800X3D), per row** — same machine, same binary, isolated
+kernel, `m = 384`, `n = 1152` — the tier is faster, and the bias op is not the reason it was
+thought to lose:
 
-| int8 path | neural net | full frame |
-|---|--:|--:|
-| tier v4 (`vpdpbusd`), what `select` picks on this CPU | 114.9 µs | 135.9 µs |
-| tier v3 (AVX2), with the AVX-512 branch in `select::dense_q8` disabled | **77.5 µs** | **98.5 µs** |
+| shape | ns/row |
+|---|--:|
+| tier v3 as committed | 17.29 |
+| tier v3, four accumulators | 8.44 |
+| tier v4 as committed (`vpaddb` per chunk, one accumulator) | 4.88 |
+| tier v4, `+128` hoisted out of the loop | 4.77 |
+| tier v4, `+128` hoisted into registers + four accumulators | **3.06** |
 
-So the 2–4× estimate above was wrong as written: on this core tier v4 costs **1.48×**
-relative to tier v3. The reason is the bias — `vpdpbusd` is unsigned × signed, so every
-chunk pays a `vpaddb` on top, and Zen 4 double-pumps 512-bit µops, which puts the tier at
-the same per-cycle MAC rate as AVX2 plus the extra µops. ARM is unaffected: `sdot` is
-signed × signed and needs no bias. Two ways out, neither measured yet: precompute the biased
-weight domain (or the per-row `128 · Σ w` correction) at quantize time so the hot loop is
-load + `vpdpbusd` only, or gate the ladder on the measured rate per ISA instead of assuming
-top-down is better. Tracked in issue #16.
+`vpdpbusd` does win on this core (≈3.5× tier v3 per row); the `vpaddb` is worth ~2% of a row, and
+the fixed per-row cost (horizontal sum, int→float, scale, store) is ~0.7–1 ns of a ~5 ns row. The
+change that landed is the one the shapes pay for: `quantize()` now stores the per-row `128 · Σ w`
+correction, the activations are biased once per layer, and the 6-chunk hot loop is `load +
+vpdpbusd` only. ARM is unaffected either way: `sdot` is signed × signed and needs no bias.
+
+**Re-measured on the same box, five rounds on one core, min** — #16's premise was a measurement
+error. The 114.9 µs / 135.9 µs row it quotes as tier v4 is the *float* path (114.4 / 136.1 on this
+core); its tier v3 row (77.5 / 98.5) is genuine. Tier v4 was never slower than tier v3 here:
+
+| | int8 NN µs/frame | ns/row | full frame |
+|---|--:|--:|--:|
+| tier v4, shape as committed | **45.5** | 5.25 | 66.8 |
+| tier v4, shape as #16 measured it | 52.8 | 6.25 | 74.0 |
+| tier v3 (AVX-512 branch forced off) | 78.2 | 9.73 | 99.4 |
+| float path, same binary | 114.4 | — | 136.1 |
+
+The shape change is worth 1.16× end to end, not the 1.37× per row it measures in isolation: the
+isolated kernel keeps 442 KB hot in L2, the model streams 2.8 MB of int8 weights per frame from L3,
+so the crate damps shape ratios. `select` stays top-down. Closed as issue #16.
 
 ### 3. f16 weights + f16 SIMD — *medium win (future)*
 
