@@ -27,7 +27,7 @@ jobs:
         # the same for the tiers it exercised.
         run: |
           echo "cpu: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"
-          echo "tiers exercisable: $(grep -m1 'flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(sse4_1|avx2|avx512f|avx512_bw|avx512_vnni)$' | tr '\n' ' ')"
+          echo "tiers exercisable: $(grep -m1 'flags' /proc/cpuinfo | tr ' ' '\n' | grep -E '^(sse4_1|avx2|avx512f|avx512_bw|avx512bw|avx512_vnni|avx512vnni)$' | tr '\n' ' ')"
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
@@ -54,7 +54,7 @@ jobs:
       - name: Fail loudly if this runner is not AVX-512 + VNNI
         run: |
           flags=$(grep -m1 'flags' /proc/cpuinfo)
-          for f in avx512f avx512_bw avx512_vnni; do
+          for f in avx512f avx512_bw avx512bw avx512_vnni; do
             grep -q " $f" <<<"$flags" || { echo "runner has no $f — tier v4 cannot be exercised here"; exit 1; }
           done
           echo "exercising tier v4 on: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2)"
