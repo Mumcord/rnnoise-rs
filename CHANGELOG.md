@@ -59,6 +59,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   private `fft` module, so no public path changed.
 - `tests/api_surface.rs` names every exported item, so a public rename or removal
   is a compile failure rather than a silent break.
+- **Real-time contract** (`doc/realtime.md`, issue #4): the frame path no longer holds
+  lazy state. `DenoiseState` and `DenoiseStateV1` resolve the shared tables at
+  construction and store them as `&'static`, so `process_frame` performs no lazy lookup
+  at all, and the legacy path no longer clones `Arc<RnnModelV1>` per frame (an atomic
+  refcount bump inside an audio callback). No numerical change.
+- `benches/process.rs` reports the **distribution** per frame (mean, p50, p99, p99.9,
+  max) and the headroom against the 10 ms frame budget, not only the mean, and measures
+  cold start separately. `make check` and CI now also run `make rt-gate`.
 
 ### Deprecated
 
@@ -77,6 +85,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `rnnoise::warmup()` — resolve the runtime CPU feature detection before the first frame
+  (`src/simd/warmup.rs`), and call it from `DenoiseState::new_with_model` /
+  `DenoiseStateV1::new_with_model`. Measured: the first `is_x86_feature_detected!` call
+  costs 7.1 µs, every later call 0.3 ns; moving it to construction is what makes the
+  steady-state frame path free of any first-use lazy initialisation. It cannot change
+  output: every tier is bit-identical to the portable reference.
+- Real-time gates (issue #4): `tests/real_time_no_alloc.rs` (counting `GlobalAlloc`, 0
+  allocations over the measured window — the optimiser can remove an unused allocation, so
+  it is paired with the source gate), `tests/real_time_denormals.rs` (no subnormal output on
+  the test signal), and `scripts/realtime_gate.py` (`make rt-gate`, part of `make check` and
+  CI): no allocation, lock, lazy static, I/O, logging or CPUID probe inside a per-frame
+  function, and no feature detection outside the dispatch layer.
+- `doc/realtime.md`: the contract, what is enforced, the measured percentiles, and the
+  denormal boundary.
 - Repository scaffolding aligned with the sibling `lovelace-labs/*-rs` repos:
   `rust-toolchain.toml`, `rustfmt.toml`, `Makefile`, `VERSION`, `AUTHORS`,
   `.editorconfig`, `.gitattributes`, `.gitconfig`, `.gitmodules`,
