@@ -227,7 +227,7 @@ core); its tier v3 row (77.5 / 98.5) is genuine. Tier v4 was never slower than t
 
 The shape change is worth 1.16× end to end, not the 1.37× per row it measures in isolation: the
 isolated kernel keeps 442 KB hot in L2, the model streams 2.8 MB of int8 weights per frame from L3,
-so the crate damps shape ratios. `select` stays top-down. Closed as issue #16.
+so the crate damps shape ratios. `select` stays top-down (`simd::tier::resolve` is the ladder in one place: top-down by default, capped to what a kernel implements when CI forces a tier). Closed as issue #16.
 
 ### 3. f16 weights + f16 SIMD — *medium win (future)*
 
