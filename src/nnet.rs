@@ -69,6 +69,19 @@ pub(crate) enum Weights {
     Q8 { w: Vec<i8>, scale: Vec<f32> },
 }
 
+/// Storage form of a dense float layer. Both forms hold the same values; the choice is a
+/// memory layout, never an arithmetic one, because each output still receives its
+/// contributions in ascending input order.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum DenseLayout {
+    /// `w[j * n + o]` — the order the weight blob stores.
+    RowMajor,
+    /// `w[(o / 8) * 8 * m + j * 8 + (o % 8)]` — grouped per output block, so a tier can
+    /// keep one accumulator per group in a register for the whole `j` walk. Outputs that
+    /// do not complete a group keep a contiguous run of their own at the end.
+    Blocks8,
+}
+
 /// Generic (sparse) affine transform — port of `LinearLayer` + `compute_linear`.
 /// Always carries a bias for the RNNoise model.
 pub(crate) struct LinearLayer {
@@ -80,6 +93,8 @@ pub(crate) struct LinearLayer {
     pub diag: Option<Vec<f32>>,
     pub nb_inputs: usize,
     pub nb_outputs: usize,
+    /// Layout of `Weights::Float`; irrelevant for the int8 and sparse forms.
+    pub dense_layout: DenseLayout,
 }
 
 impl LinearLayer {
@@ -90,6 +105,9 @@ impl LinearLayer {
         let out = &mut out[..n];
         match (&self.weights, &self.weights_idx) {
             (Weights::Float(w), Some(idx)) => crate::simd::sparse_sgemv8x4(out, w, idx, n, input),
+            (Weights::Float(w), None) if self.dense_layout == DenseLayout::Blocks8 => {
+                crate::simd::dense_sgemv_blocks(out, w, m, n, input)
+            }
             (Weights::Float(w), None) => dense_sgemv(out, w, m, n, input),
             (Weights::Q8 { w, scale }, _) => {
                 let mut qx = [0i8; MAX_Q8_INPUTS];
@@ -127,9 +145,16 @@ impl LinearLayer {
         let mut dense = vec![0.0f32; n * m];
         match &self.weights_idx {
             None => {
+                // Undo the layout before quantizing: the int8 form is always the plain
+                // transposed `[output][input]` matrix.
                 for o in 0..n {
                     for j in 0..m {
-                        dense[o * m + j] = w[j * n + o];
+                        let v = if self.dense_layout == DenseLayout::Blocks8 {
+                            w[(o / 8) * 8 * m + j * 8 + (o % 8)]
+                        } else {
+                            w[j * n + o]
+                        };
+                        dense[o * m + j] = v;
                     }
                 }
             }
@@ -199,16 +224,8 @@ fn for_each_block(idx: &[i32], rows: usize, mut f: impl FnMut(usize, usize, usiz
 /// Dense float GEMV as a sequence of SAXPYs (j outer, i inner): streams the
 /// matrix sequentially (cache-friendly, auto-vectorisable) while preserving the
 /// per-`out[i]` accumulation order, so it is bit-identical to the C reference.
-fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, input: &[f32]) {
-    for v in out.iter_mut() {
-        *v = 0.0;
-    }
-    for (j, &xj) in input[..m].iter().enumerate() {
-        let row = &w[j * n..j * n + n];
-        for (o, &wv) in out.iter_mut().zip(row.iter()) {
-            *o += wv * xj;
-        }
-    }
+pub(crate) fn dense_sgemv(out: &mut [f32], w: &[f32], m: usize, n: usize, input: &[f32]) {
+    crate::simd::dense_sgemv(out, w, m, n, input);
 }
 
 /// Largest input width of a quantized layer (conv2 and the GRUs are all 384).
