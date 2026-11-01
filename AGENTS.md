@@ -43,7 +43,9 @@ Acceptance criteria for any new or refactored code (binding):
 5. **Style** — the adopted ruleset is [doc/styleguide.md](doc/styleguide.md)
    (adapted from the Google Rust style guide). Rules are either tool-enforced or
    explicitly waived; if a rule is broken, the PR/commit cites the exemption by
-   number. `make style` checks what no lint can express.
+   number. `make check` is the whole gate: everything it enforces is a lint level,
+   and the rules no lint can express (SAFETY comments, module-root purity, one-module-
+   per-`use`, `rustfmt::skip`, async) are review rules.
 
 ## Build & test
 
