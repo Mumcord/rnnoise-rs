@@ -134,7 +134,8 @@ the gate was narrowed to lint levels and these checks became review rules.
 5. `lib.rs`/`mod.rs` contain only `mod` + `pub use` + doc comments (our own
    stricter rule; see §5.1).
 
-Wire into `Makefile` as `make style` and into `check`, plus CI step.
+Planned to be wired into `Makefile` as `make style` and into `check` plus a CI step.
+It landed as lint levels instead — see §7.
 
 ### 4.4 Naming and API-shape conventions to write down
 
@@ -261,10 +262,9 @@ result rather than a review argument.
 
 ## 9. Definition of done
 
-`make check` (fmt + clippy + test) plus `make style` passes with the §4.1 lint
-set is green, `doc/styleguide.md` lists
-every adopted rule with its enforcement mechanism and every exemption with a
-rationale, and parity output is byte-identical to the pre-change run.
+`make check` (fmt + clippy + test) passes with the §4.1 lint set, `doc/styleguide.md`
+lists every adopted rule with its enforcement mechanism — lint or review — and every
+exemption with a rationale, and parity output is byte-identical to the pre-change run.
 
 
 ## 7. What actually landed
