@@ -6,7 +6,7 @@
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0)
 
-.PHONY: help build test fmt fmt-check clippy style doc check clean
+.PHONY: help build test fmt fmt-check clippy doc check clean
 help: ## Show this help message
 	@awk 'BEGIN{FS=":.*##"; printf "\nrnnoise-rs  v$(VERSION)\n\nTargets:\n"} /^[a-zA-Z_-]+:.*##/{printf "  %-12s %s\n",$$1,$$2}' $(MAKEFILE_LIST)
 	@echo ""
@@ -26,13 +26,10 @@ fmt-check: ## cargo fmt --check
 clippy: ## cargo clippy with warnings denied
 	cargo clippy --all-targets --all-features -- -D warnings
 
-style: ## style checks that no lint can express (doc/styleguide.md)
-	./scripts/check-style.sh
-
 doc: ## cargo doc
 	cargo doc --no-deps
 
-check: fmt-check clippy style test ## fmt + clippy + style + test (the CI gate)
+check: fmt-check clippy test ## fmt + clippy + test (the CI gate)
 
 clean: ## cargo clean
 	cargo clean

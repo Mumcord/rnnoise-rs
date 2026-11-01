@@ -23,7 +23,8 @@ Idiomatic Rust port of Xiph RNNoise (current conv+GRU model) for real-time speec
    `src/fft/x86_64.rs`, `src/fft/dispatch.rs`, the SIMD/FFT test modules):
    `unsafe_code = "deny"` at the crate root, `#[allow(unsafe_code)]` only on those
    module declarations, and a `SAFETY:` justification per block or per file.
-   `make style` enforces both.
+   `unsafe_code = "deny"` enforces the islands; the `SAFETY:` comment itself is a
+   review rule (no lint can express it).
 4. **No silent breaking changes.** Public API changes need an entry in
    [CHANGELOG.md](CHANGELOG.md).
 

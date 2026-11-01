@@ -9,7 +9,7 @@ Links to issues where relevant.
 
 ## Gate
 
-- [ ] `make check` (fmt + clippy + style + test) is green
+- [ ] `make check` (fmt + clippy + test) is green
 - [ ] `cargo test --release` — the parity harness is unchanged, byte for byte
 - [ ] style commits and behaviour commits are separate commits
 - [ ] public API changes have a `CHANGELOG.md` entry, and `tests/api_surface.rs`
@@ -17,6 +17,7 @@ Links to issues where relevant.
 
 ## Rules
 
-The ruleset is [doc/styleguide.md](../doc/styleguide.md). If a rule is broken, cite
+The ruleset is [doc/styleguide.md](../doc/styleguide.md). If a review-only rule is
+broken, cite
 the exemption by number (C1 parity/exactness, C2 upstream file names, C9 pedantic
 casts, …) rather than arguing it again.

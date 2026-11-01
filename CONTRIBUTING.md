@@ -89,9 +89,11 @@ The short version:
   `expect("context")`. Tests use `expect` with an assertion context string.
 - Unsafe only in the declared islands (`src/capi.rs`, `src/simd/`,
   `src/fft/x86_64.rs`, `src/fft/dispatch.rs`), each with a `SAFETY:` justification.
-- No async, no threads, no `catch_unwind`, no unstable features, no `rustfmt::skip`
-  except manual alignment.
-- `make style` runs the checks that no lint can express and is part of `make check`.
+- No `catch_unwind`, no threads (denied via `clippy.toml`), no unstable features.
+  No async in the DSP path, nothing before `main()`, no `rustfmt::skip` except manual
+  alignment — these are review rules, not lints.
+- The gate is `make check`: everything it enforces is a lint level. The rest of
+  `doc/styleguide.md` is deliberately review-only.
 
 ## Module organization
 

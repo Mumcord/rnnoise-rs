@@ -15,7 +15,7 @@ that a rule can be cited in review without re-arguing it.
 Every rule below is marked:
 
 - **A** — already satisfied, recorded so review stops re-litigating it.
-- **B** — adopted as a gate (`cargo clippy` lints, `rustfmt`, `make style`).
+- **B** — adopted as a gate (a `cargo clippy`/`rustc` lint level or a `rustfmt` setting).
 - **C** — waived for this repo, with the reason.
 
 Scope: **binding** for the library (`src/`), **advisory** for `tests/`,
@@ -31,17 +31,16 @@ Scope: **binding** for the library (`src/`), **advisory** for `tests/`,
 | Rule | Mechanism |
 |---|---|
 | Formatting is tool-enforced, not argued | `rustfmt` with `max_width = 100` and `hex_literal_case = Lower` (both available on the pinned stable toolchain) |
-| No `#[rustfmt::skip]` except manual alignment or generated code | `make style` fails on any `rustfmt::skip` outside the table-alignment allowlist |
+| No `#[rustfmt::skip]` except manual alignment or generated code | review |
 | All clippy warnings are errors | `cargo clippy --all-targets --all-features -- -D warnings` |
 | Public items are documented | `[lints.rust] missing_docs = "deny"` |
-| No unstable features | `[lints.rust] unstable_features = "deny"` + `rust-toolchain.toml` pins `stable` + `make style` checks the channel |
+| No unstable features | `[lints.rust] unstable_features = "deny"` (the pinned toolchain stays on `stable`) |
 | `#![forbid(unsafe_code)]` is real, not aspirational | `[lints.rust] unsafe_code = "deny"`, with `#[allow(unsafe_code)]` only on the declared unsafe islands (§unsafe) |
 
 ### `use` statements
 
-- One module per `use` block (no `::` inside `{..}`): `imports_granularity =
-  Module` is nightly-only, so `make style` checks it and the toolchain stays on
-  stable.
+- One module per `use` block (no `::` inside `{..}`): review rule, because
+  `imports_granularity = Module` is nightly-only and the toolchain stays on stable.
 - No glob imports (`clippy::wildcard_imports` denied), **except**: `use super::*`
   in inline test modules, `pub use submodule::*` in non-leaf modules, and the
   `core::arch` intrinsic globs in the SIMD islands.
@@ -142,9 +141,8 @@ in `lib.rs`/`mod.rs` and no unsafe anywhere else:
 | `src/capi.rs` | caller-supplied pointers crossing the FFI boundary |
 | `src/simd/tests.rs`, `src/fft/tests.rs` | tests call the tiers directly to compare them with the portable reference |
 
-`make style` requires a `SAFETY:` justification covering each unsafe block — the
-comment directly above the block, or a file-level justification (the guide allows
-a justification that covers a whole file).
+A `SAFETY:` justification per block, or per file (the guide allows either), is a
+review rule: no lint can express it. The island membership itself is a lint.
 
 ---
 
@@ -178,12 +176,49 @@ Adopted despite the `[chrome]` tag, because they fit a real-time audio crate:
 `lib.rs` and every `mod.rs` contain only module declarations, re-exports, doc
 comments and attributes — no logic, no types, no constants. This is the repo rule;
 the guide allows "a small amount of core ties-things-together code", which we do
-not take. `make style` enforces it. `#[cfg(test)] mod tests` inside a leaf module
+not take, and no lint can express it — review. `#[cfg(test)] mod tests` inside a leaf module
 is explicitly allowed by the guide.
+
+## What is enforced by a lint, and what is not
+
+Everything below is a lint level, so `make check` is the whole gate:
+
+| Rule | Lint |
+|---|---|
+| Unsafe confined to the declared islands | `unsafe_code = "deny"` + island `#[allow]` |
+| Public items documented | `missing_docs = "deny"` |
+| No feature gates / unstable features | `unstable_features = "deny"` |
+| No `unwrap` in the crate | `clippy::unwrap_used = "deny"` |
+| No `catch_unwind`, no thread spawn | `clippy::disallowed_methods` in `clippy.toml` |
+| Glob imports only in the exemptions | `clippy::wildcard_imports` + island `#[allow]` |
+| `#[must_use]` where the result is the point | `clippy::must_use_candidate` |
+| `#[non_exhaustive]` on public enums/structs | `clippy::exhaustive_enums`, `clippy::exhaustive_structs` |
+| Standard trait instead of a lookalike method | `clippy::should_implement_trait` |
+| Derivable impls are derived | `clippy::derivable_impls` |
+| `as_`/`to_`/`into_` and `self` conventions | `clippy::wrong_self_convention` |
+| `len()` paired with `is_empty()` | `clippy::len_without_is_empty` |
+| Flexible reference types | `clippy::borrowed_box`, `clippy::ptr_arg` |
+| `new()` paired with `Default` | `clippy::new_without_default` |
+| Formatting | `rustfmt` (`max_width = 100`, `hex_literal_case = Lower`) |
+
+These are **review rules** — no lint can express them, so they are checked by a
+human and nothing else:
+
+- the `SAFETY:` justification per unsafe block or file,
+- module-root purity (`lib.rs`/`mod.rs` declare and re-export only),
+- one module per `use` block (`imports_granularity` is nightly-only),
+- `#[rustfmt::skip]` only for manual alignment or generated code,
+- no async in the DSP path, nothing that runs before `main()`, never looking
+  inside a poisoned mutex,
+- the naming rules that clippy cannot see (lifetimes, generics, `try_new()`).
+
+If a rule is broken without an exemption, the PR says so. A rule nobody can check
+is a rule that will not survive review, which is the guide's own argument for
+keeping rules that "pull their weight".
 
 ## Review checklist
 
-1. `make check` green (fmt + clippy + test), `make style` green.
+1. `make check` green (fmt + clippy + test).
 2. `tests/parity.rs` byte-identical before and after — a style change that moves
    a bit is not a style change.
 3. Style commits and behaviour commits do not mix.

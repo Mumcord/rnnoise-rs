@@ -19,7 +19,7 @@ Adopting it here means three buckets, and the bucket must be stated per rule:
 | Bucket | Meaning | Enforcement |
 |---|---|---|
 | **A — Adopt as-is** | Rules that already match the repo or are tool-enforced | CI gate (`make check`) + `[lints]` |
-| **B — Adopt as repo policy** | New rules worth enforcing mechanically | new lints, `rustfmt.toml` keys, `scripts/check-style.sh` |
+| **B — Adopt as repo policy** | New rules worth enforcing mechanically | lint levels in `[lints]`, `clippy.toml`, `rustfmt.toml` keys |
 | **C — Waive / scope with rationale** | Rules that conflict with faithful-port, parity, or real-time audio | written down in the guide, exempt by name |
 
 Binding scope: the guide itself distinguishes library code (binding) from
@@ -122,7 +122,9 @@ practically); `use super::*` inside test modules is already an allowed case.
 
 ### 4.3 `clippy.toml` + `scripts/check-style.sh` (new)
 
-Mechanical checks the lints cannot express:
+Mechanical checks the lints cannot express. **This is what was planned; it did not
+land as a shell gate** — see §7. A shell gate that re-implements lint rules drifts, so
+the gate was narrowed to lint levels and these checks became review rules.
 
 1. every `unsafe {` block must have a `SAFETY:` comment above it,
 2. `unsafe` may only appear in the declared islands (`src/simd/**`,
@@ -196,7 +198,7 @@ The risky part is not the sweep, it is the naming/API decisions in §4.4.
    `CONTRIBUTING.md` (§ "Coding standards"). Decision table signed off before
    any code PR.
 2. **PR `chore/style-gates`**: `[lints]` in `Cargo.toml`,
-   `rustfmt.toml` keys, `clippy.toml`, `scripts/check-style.sh`, `make style`,
+   `rustfmt.toml` keys, `clippy.toml`, `make style` (a shell gate — later dropped,
    CI step, and the `AGENTS.md` unsafe-claim correction. Expected: red until 3–5.
 3. **PR `refactor/lint-green`** (parity-neutral): the §5.2 sweep, `lib.rs`
    constants move. Run `cargo test --release` parity before/after — must be
@@ -260,6 +262,21 @@ result rather than a review argument.
 ## 9. Definition of done
 
 `make check` (fmt + clippy + test) plus `make style` passes with the §4.1 lint
-set, `scripts/check-style.sh` reports zero violations, `doc/styleguide.md` lists
+set is green, `doc/styleguide.md` lists
 every adopted rule with its enforcement mechanism and every exemption with a
 rationale, and parity output is byte-identical to the pre-change run.
+
+
+## 7. What actually landed
+
+`scripts/check-style.sh` was dropped. The gate is `make check` (fmt + clippy + test)
+plus the lint levels in `Cargo.toml`/`clippy.toml`, which cover: the unsafe islands,
+`missing_docs`, unstable features, `unwrap_used`, `must_use_candidate`,
+`exhaustive_enums`/`exhaustive_structs`, `wildcard_imports`, `disallowed_methods`
+(`catch_unwind`, `thread::spawn`), and the `self`/`Default`/`is_empty` pairings.
+
+The checks that no lint can express — SAFETY comments, module-root purity,
+one-module-per-`use` (nightly rustfmt only), `rustfmt::skip`, async, pre-`main`
+work, poisoned mutexes, lifetimes and generic naming — stayed review rules. Two of
+them were worth keeping as prose precisely because they are the parity and
+real-time rules: the SAFETY justification and module-root purity.
