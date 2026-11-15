@@ -138,6 +138,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   closure accessors, so constructors take the `new_with_foo()` form. The aliases
   are source-compatible and will be removed in 0.3.
 
+### Fixed
+
+- A model blob whose sparse weight index points at an unaligned block or past the layer's
+  inputs is now rejected at load time with the new `ModelError::BadIndex`, as the C
+  reference's `find_idx_check` does. It used to load and then panic inside `process_frame`.
+
 ### Breaking
 
 - `ModelError` is now `#[non_exhaustive]` (guide rule), which means downstream
