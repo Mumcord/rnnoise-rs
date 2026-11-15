@@ -9,7 +9,7 @@ use core::arch::x86_64::*;
 // SAFETY: requires AVX2, checked at runtime by `select` before calling here. `idx`
 // is the upstream sparse layout (`rows` a multiple of 8, every `pos` inside `x`) as
 // produced by the blob loader; loads are unaligned, arithmetic exact float per lane.
-// The raw loads and the store go through bounds-checked subslices, so a layout that
+// The raw loads and the store go through bounds-checked slices, so a layout that
 // does not match `w` or `out` panics instead of reading or writing out of bounds.
 pub(crate) unsafe fn sparse_sgemv8x4(
     out: &mut [f32],
